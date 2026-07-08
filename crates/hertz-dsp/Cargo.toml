@@ -8,5 +8,4 @@ description = "Pure DSP library for Hertz: channelizer, NFM/AM demod, entropy sq
 num-complex = { workspace = true }
 rustfft = { workspace = true }
 hound = { workspace = true }
-thiserror = { workspace = true }
 serde = { workspace = true }
