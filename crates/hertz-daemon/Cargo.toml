@@ -3,9 +3,33 @@ name = "hertz-daemon"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "hertzd"
+path = "src/main.rs"
+
 [dependencies]
 hertz-types = { path = "../hertz-types" }
 hertz-channels = { path = "../hertz-channels" }
 hertz-sdr = { path = "../hertz-sdr" }
 hertz-dsp = { path = "../hertz-dsp" }
-hertz-tx = { path = "../hertz-tx" }
+hound = { workspace = true }
+num-complex = { workspace = true }
+rustfft = { workspace = true }
+crossbeam-channel = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rtrb = { workspace = true }
+async-stream = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,19 @@
+services:
+  hertzd:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ghcr.io/deepbluedynamics/hertz:latest
+    container_name: hertzd
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    device_cgroup_rules:
+      - 'c 189:* rmw'
+    environment:
+      - HERTZ_TOKEN=${HERTZ_TOKEN}
+    ports:
+      - "9080:9080"
+    volumes:
+      - ./data:/data
+      - ./hertz.toml:/etc/hertz/hertz.toml:ro

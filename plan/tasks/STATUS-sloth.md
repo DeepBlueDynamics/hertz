@@ -1,115 +1,105 @@
-# STATUS — Prior Sloth 🫖 (hertz-dsp port)
+# STATUS — Prior Sloth 🫖
 
-**Brief:** `plan/tasks/T2-sloth-dsp.md` — port gnosis-radio DSP into `crates/hertz-dsp`
-as a pure, side-effect-free library with synthetic-IQ tests.
+## T2 — hertz-dsp port: ✅ DONE (committed 255fc45)
+Pure DSP library ported from gnosis-radio; 27 tests; fmt/clippy `-D warnings` clean.
+See the T2 section in git history / the prior status for the full module map,
+sacred constants, and justified deviations (25 kHz adjacent-channel test, AM
+signal_db-driven squelch superset, entropy-pool hard cap, std-time timestamps).
 
-## Current state: ✅ DONE (quality gate green)
+---
 
-All seven brief items ported; 27 tests pass; fmt + clippy (`-D warnings`) clean; no
-side-effectful I/O outside `recorder.rs` (the one excepted module).
+## T4 — Daemon core: ✅ DONE (quality gate green)
 
-## Module map (brief item → file)
+`crates/hertz-daemon` + `crates/hertz-types/src/wire.rs`. Monitor + channelized roles
+on one axum port (REST + WS + SSE + `/audio`). No hopscan/MCP/transcription engine —
+seams only. MockSdr end-to-end test passes; `hertzd --mock` runs and serves `/api/status`.
 
-| # | Brief item | File | Lines |
-|---|---|---|---|
-| 1 | `pipeline/state.rs` NFM + Pipeline | `src/demod/nfm.rs` + `src/pipeline.rs` | 264 + 532 |
-| 2 | `dsp.rs` → analysis | `src/analysis.rs` | 469 |
-| 3 | `wideband.rs` → channelizer | `src/channelizer.rs` | 233 |
-| 4 | `pipeline/squelch.rs` → classify | `src/classify.rs` | 50 |
-| 5 | `pipeline/recorder.rs` → recorder | `src/recorder.rs` | 145 |
-| 6 | entropy pool | `src/entropy.rs` | 122 |
-| 7 | NEW AM demod | `src/demod/am.rs` | 119 |
-| — | synthetic IQ | `src/testutil.rs` | 199 |
-| — | demod trait + dispatch | `src/demod/mod.rs` | 54 |
-| — | top-level types + re-exports | `src/lib.rs` | 28 |
-| — | integration tests | `tests/*.rs` | 6 files |
+### Step 1 — wire protocol (`hertz-types/src/wire.rs`) — landed first ✅
+- `WsServerMsg` = `Event(Event)` | `Hello { version, dongles }` (externally-tagged JSON).
+- Binary audio frame consts + `encode_audio_frame`/`decode_audio_frame`
+  (`[u8 dongle][u32 ch_key][u32 freq][f32 signal][f32 pcm…]`, gnosis + leading dongle byte).
+- REST DTOs: `StatusResponse`, `DongleSummary`, `TuneRequest` (with `validate()`),
+  `SquelchRequest`, `RecordingRequest`, `ListenRequest`, `ActivityEntry`,
+  `TranscriptEntry`, `RecordingFileEntry`, `DoctorReport`, `DongleDoctorEntry`.
+- 5 wire unit tests: audio round-trip, short/trailing rejection, WS Hello round-trip,
+  **every Event variant** serializes/parses, TuneRequest validation. Re-exported from
+  the crate root so the TUI builds against `hertz_types::{WsServerMsg, …}`.
 
-**Total:** ~2 720 lines of Rust (src + tests).
+### Steps 2–4 — runtime + network surface + binary
+| Module | Role |
+|---|---|
+| `bus.rs` | `EventBus`: separate `broadcast<Event>` (1024) + `broadcast<AudioFrame>` (256) so audio can't evict control events; `spawn_pumps` bridges sync DSP → async via tokio `mpsc::UnboundedSender` (sync-safe `send`). |
+| `control.rs` | `DongleControl` (Arc<Mutex>) — freq/squelch/recording/listening with epoch counters for lock-free DSP reads; `set_*` from REST, `snapshot()` from DSP. |
+| `factory.rs` | `SdrFactory` trait + `RealFactory` (`open_by_serial`) + `MockFactory` (Arc-shared closure → many `MockSdr` workers). The test-injection seam. |
+| `pipeline_bridge.rs` | Sync DSP threads: monitor loop (u8 ring → `bytes_to_iq` → `Pipeline`) + channelized loop (wideband → `detect_active_channels` → per-slot `extract_channel` + Pipeline, tap pinned, 5 s silence release, 25-frame ChannelActivity heartbeat). Maps `PipelineEvent` → bus Event / AudioFrame / recorder job. Worker `DeviceLost`/`Reconnected` → `DongleStatus` + pipeline reset. |
+| `recorder.rs` | Recorder task: `TransmissionJob` → `hertz_dsp::recorder::write_recording` in `spawn_blocking` → `RecordingSaved` + `events.log` line → `Transcriber` seam. |
+| `history.rs` | 500 activity / 200 transcripts rings + JSONL append persistence under `data_dir/history/`, reloaded on boot. |
+| `transcribe.rs` | `trait Transcriber` (sync, object-safe) + `DisabledTranscriber` no-op. Phase 6 fills engines. |
+| `runtime.rs` | `Daemon::start` wires config→channels→bus→recorder→per-dongle DSP threads→pumps→history subscriber→axum server. Graceful `shutdown()` (DSP flags + worker shutdown + axum graceful-shutdown oneshot) + non-hanging `join()` (joins DSP threads + recorder, aborts server/history/pumps). |
+| `server/mod.rs` | axum router: REST `/api/*` (status, dongles, channels, tune, squelch, recording, listen, activity, transcriptions, recordings + sanitized file serve, entropy, time, doctor), WS `/stream` (`?events=&audio=` filters + Hello + binary audio), SSE `/events`, bearer-token auth (loopback exempt). |
+| `server/audio_endpoint.rs` | `/audio?dongle=&channel=` chunked `audio/L16;rate=48000;channels=1` (gnosis/VLC-compatible). |
+| `main.rs` | `hertzd` binary: tracing, banner, config+bandplan load, ctrl-c graceful shutdown, `--mock` flag to run with no hardware. |
 
-## Key design decisions
+### Step 5 — Tests (all green)
+- `tests/mock_e2e.rs`: boots daemon on an ephemeral port with a `MockFactory` whose
+  closure synthesizes an NFM voice burst (noise→voice→noise via
+  `hertz_dsp::testutil`); asserts **over a real WS connection**: Hello →
+  `SquelchEvent(open)` → binary audio frames → `SquelchEvent(close)` →
+  `RecordingSaved`, and the WAV exists in the temp data_dir. Passes in ~0.8 s.
+- `tests/rest.rs`: raw-HTTP `GET /api/status` (200 + dongle roster); `POST …/tune`
+  round-trips and mutates worker control state; `check_auth` unit: loopback exempt,
+  non-loopback without token → 401, with token → ok, wrong token → 401.
 
-1. **Decoupled side effects.** `Pipeline::process_buffer(&[Complex32]) -> Vec<PipelineEvent>`.
-   No println!, no TcpStream, no inline file I/O. Events emitted in order:
-   `SquelchOpened` → `Audio(Prebuffer)` → `Audio(Transmission)`×N → `SquelchClosed`
-   → `TransmissionComplete(TransmissionSummary)`. Plus `MonitorTap` (always-on tap,
-   gnosis feature kept) and `SignalLevel` (every 2 frames, for metering). The daemon
-   wires `TransmissionComplete` → `recorder::write_recording` (or its own recorder).
-2. **f32 IQ end-to-end.** `extract_channel` returns `Vec<Complex32>`; the gnosis u8
-   round-trip between channelizer and pipeline is gone. `bytes_to_iq` is the single
-   edge helper for raw dongle u8 input only.
-3. **Generic channelizer.** `extract_channel` / `detect_active_channels` /
-   `estimate_noise_floor` take `sample_rate_hz`, `decimation`, `channel_half_width_hz`
-   as parameters — not hardcoded to 2.4 MHz/÷10. Channel ids are `u32` (any bandplan
-   key), not gnosis's `u8` marine-only. gnosis wideband constants kept as `pub const`
-   reference defaults.
-4. **Mode enum + `DemodImpl` enum dispatch.** `Mode::Nfm | Mode::Am` on
-   `PipelineConfig`; the pipeline holds a `DemodImpl` and dispatches inline (no dyn
-   dispatch in the hot path). AFC runs NFM-only (AM carriers have no frequency
-   deviation).
-5. **Dropped `hertz-types` dep** to keep the crate buildable standalone (builds
-   regardless of whether the other worker's crates are ready). Final dep set:
-   num-complex, rustfft, hound, serde only — exactly the T2-allowed set (thiserror
-   was unused, removed).
-
-## Deviations from gnosis (all justified)
-
-1. **Adjacent-channel test offset = 25 kHz, not "10 kHz".** The brief said
-   "10 kHz-offset NFM signal on the adjacent channel"; 10 kHz is *inside* the 81-tap
-   FIR's 11 kHz passband and would NOT be rejected — that would assert the opposite of
-   the intended channel-selectivity result. Used 25 kHz (the marine channel spacing),
-   which is what gnosis's FIR was field-tuned to reject. Verified: on-channel vs
-   +25 kHz power delta > 15 dB; combined in-channel power moves < 2 dB.
-2. **AM squelch/classify is signal_db-driven.** A pure AM carrier demodulates to
-   silence (flat envelope → DC-blocked), so demod-audio spectral flatness reads ~1.0
-   ("noise-like") and a flatness-only squelch would never open on it. For `Mode::Am`
-   only, `signal_present` also accepts `signal_db > squelch_thresh`; NFM stays
-   flatness-only, byte-for-byte as gnosis. The AM carrier then classifies as Carrier
-   (test: `am_carrier_only_classifies_as_carrier`). This is a *superset* of gnosis
-   behaviour — NFM is unchanged.
-3. **Entropy pool hard cap.** gnosis's harvest could overshoot the 4 KiB cap because
-   it checked capacity at the start of `harvest`, relying on frequent HTTP draining.
-   Added a post-harvest truncate so `len() <= POOL_CAPACITY` is guaranteed regardless
-   (test: `pool_caps_at_4kb`). Same harvest constants (stride 37, 32 B/frame).
-4. **Recorder timestamp via `std::time`, not chrono.** chrono is not in the T2-allowed
-   dep set; implemented `YYYYMMDD_HHMMSS` UTC formatting with `SystemTime` +
-   Howard Hinnant's civil-from-days algorithm. Same filename scheme as gnosis.
-5. **NaN-safe FFT helpers.** Replaced gnosis's `partial_cmp(...).unwrap()` with
-   `total_cmp` in analysis.rs sort/max-by calls (robust to NaN inputs).
-6. **Two inherited gnosis test bugs fixed** (test expectations were wrong, not impls):
-   the Hann-window test asserted `coeffs[15] < 0.01` but gnosis uses the periodic
-   (`/N`) Hann where `coeffs[15] ≈ 0.038`; `bytes_to_iq` test asserted the wrong
-   component. Confirmed impls match gnosis reference exactly.
-
-## Constants carried (gnosis-feature-inventory.md "Constants worth carrying")
-
-SDR_RATE 240k · BUFFER_SIZE 48k · AUDIO 48k · PREBUFFER 1.5s · AFC 0.85/0.5Hz/5kHz ·
-squelch 6/12 dB · hang 10 frames · flatness open<0.55 noise>0.70 · wideband
-2.4M/8192/÷10 · channel FIR 81 taps @ 11kHz · recorder FADE 480 · pipeline FADE_IN 4800 ·
-DC α=0.001 · audio LPF 3kHz · peak-norm 0.7 · noise-floor α 0.15/0.02/frozen ·
-entropy stride 37 / 32 B-per-frame / 4 KiB cap · LPF 51 taps @ 0.05 norm.
-
-## Verification
-
+### Verification
 ```
-$ export PATH="$HOME/.cargo/bin:$PATH"
-$ cargo fmt -p hertz-dsp --check          # OK
-$ RUSTFLAGS="-D warnings" cargo clippy -p hertz-dsp --all-targets   # clean, no warnings
-$ cargo test -p hertz-dsp
-test result: ok. 8 passed   (lib unittests: analysis/channelizer/entropy)
-test result: ok. 3 passed   (tests/am.rs)
-test result: ok. 3 passed   (tests/channelizer.rs)
-test result: ok. 5 passed   (tests/entropy_recorder.rs)
-test result: ok. 5 passed   (tests/nfm.rs)
-test result: ok. 3 passed   (tests/squelch.rs)
-# 27 tests, 0 failures
+$ cargo fmt -p hertz-types -p hertz-daemon --check          # CLEAN
+$ cargo clippy -p hertz-types -p hertz-daemon --all-targets # 0 warnings
+$ cargo test -p hertz-types -p hertz-daemon
+   hertz-types: 6 passed (wire + config)
+   hertz-daemon mock_e2e: 1 passed   rest: 2 passed
+$ ./target/debug/hertzd --mock /tmp/hertz-mock.toml         # boots, 419 channels
+$ curl 127.0.0.1:19080/api/status                           # 200 + dongle roster
 ```
-Side-effect scan: `rg "println!|eprintln!|TcpStream|std::fs|File" src/` → only matches
-are in a doc comment (`//! No println!...`) and `recorder.rs` (the excepted WAV writer).
 
-## Toolchain note
-`cargo`/`rustc` were at `~/.cargo/bin` (not on PATH); `gcc`/`libc6-dev` were missing
-and had to be `apt-get install`ed to link the test binaries (rule 7). rustc 1.96.1
-stable; `is_multiple_of` (stabilized 1.87) is used.
+### Protocol / design decisions (for the TUI + later phases)
+1. **WS envelope is externally-tagged** (`{"Event":{"type":"SquelchEvent",…}}`,
+   `{"Hello":{…}}`) — the TUI matches on the outer key. Audio is NEVER a text frame:
+   it's the binary layout above, selected via `?audio=<dongle>:<channel|all|none>`
+   (default **none**).
+2. **Two broadcast channels** (events + audio) so a slow audio subscriber can't evict
+   squelch/recording events. DSP→bus bridge is tokio `mpsc::UnboundedSender` (its
+   `send` is sync-safe) — simpler than the brief's crossbeam pump, same effect
+   (noted deviation).
+3. **Sync→async bridge**: each DSP thread is a `std::thread` (gnosis model); it feeds
+   the bus via two unbounded senders whose `send` needs no `.await`.
+4. **`DongleControl` epochs**: REST mutates freq/squelch and bumps an epoch; the DSP
+   thread snapshots the epoch each frame and rebuilds the pipeline only on change
+   (so a squelch change rebuilds the pipeline — phase-continuous audio during control
+   changes is a later refinement).
+5. **`hertzd --mock`** runs the full stack with a static-IQ `MockFactory` so the
+   network surface and `/api/doctor` are demonstrable with no hardware.
+6. **Channelized channel_key** maps numeric marine ids (`"16"` → u32) for the wire
+   frame; non-numeric ids hash — T4 tests use numeric marine ids. A side-table for
+   arbitrary string ids arrives with full bandplan mode support.
 
-## Blocked
-None. Crate is complete, self-contained, and decoupled from the other workers' crates.
+### Blocked / deferred (by design, later phases)
+- **Hopscan** (Phase 5): role recognised, spawn skipped with a log line.
+- **MCP** (Phase 7): no `/mcp` mount yet.
+- **Transcription engines** (Phase 6): `Transcriber` seam + `DisabledTranscriber` only.
+- **Entropy API** (`/api/entropy`) returns the pool shape; full DSP-pool drain wiring
+  (the pipeline's pool isn't yet surfaced to the REST handler) lands with the
+  per-dongle `drain_entropy` plumbing — the seam exists (`Pipeline::drain_entropy`).
+- AM/SSB per-channel mode selection in the channelized path (mode is read from the
+  bandplan channel; monitor defaults to NFM).
+
+### Toolchain note
+`cargo`/`rustc 1.96.1` at `~/.cargo/bin`; `gcc`/`libc6-dev` installed earlier (T2).
+The shared `target/` dir hit transient FS I/O errors twice during RUSTFLAGS-changed
+rebuilds — `cargo clean` resolved it each time; not a code issue.
+
+### Path discipline
+Touched only: `crates/hertz-daemon/**`, `crates/hertz-types/src/wire.rs` (+ the
+minimal `pub mod wire;` + re-export wiring in `hertz-types/src/lib.rs` — no existing
+types modified), and the workspace root `Cargo.toml` for new `[workspace.dependencies]`
+(tokio, tokio-tungstenite, axum, tower-http, futures, tracing, tracing-subscriber).
+Did not touch hertz-sdr/hertz-tui/hertz-channels or any other worker's paths.

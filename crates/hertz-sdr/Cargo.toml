@@ -5,3 +5,16 @@ edition = "2021"
 
 [dependencies]
 hertz-types = { path = "../hertz-types" }
+rtl-sdr-rs = { workspace = true }
+rtrb = { workspace = true }
+crossbeam-channel = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }
+rusb = { workspace = true }
+log = { workspace = true }
+num-complex = { workspace = true }
+
+
+

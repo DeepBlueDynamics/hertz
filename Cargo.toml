@@ -20,7 +20,21 @@ hound = "3.5"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"
 anyhow = "1.0"
+rtl-sdr-rs = "0.3.3"
+rtrb = "0.3"
+crossbeam-channel = "0.5"
+rusb = { version = "0.9", features = ["vendored"] }
+log = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "fs", "io-util"] }
+tokio-tungstenite = "0.23"
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors"] }
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 
 [profile.release]
 opt-level = 3
 lto = "thin"
+

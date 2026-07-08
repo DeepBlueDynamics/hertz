@@ -1,0 +1,175 @@
+//! MockSdr end-to-end test (T4 brief Step 5). Boots the daemon on an ephemeral port
+//! with a `MockFactory` whose closure synthesizes an NFM voice burst (noise → voice
+//! → noise), then asserts the full lifecycle **over a real WebSocket connection**:
+//! Hello → SquelchEvent(open) → binary audio frames → SquelchEvent(close) →
+//! RecordingSaved, and that the WAV file lands in the temp data_dir.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use hertz_channels::ChannelDb;
+use hertz_daemon::{Daemon, MockFactory};
+use hertz_dsp::testutil::{fm_multitone_signal, white_noise};
+use hertz_types::wire::WsServerMsg;
+use hertz_types::{DaemonConfig, DaemonSettings, DongleConfig, DongleRole};
+use num_complex::Complex32;
+
+/// Build the mock u8 IQ stream: ~1 s noise → ~1.5 s NFM voice → ~4 s noise (long
+/// enough to expire the 10-frame hang and close the squelch).
+fn build_mock_iq_pairs() -> Vec<(u8, u8)> {
+    let rate = 240_000u32;
+    let n_noise1 = rate as usize; // 1 s
+    let n_voice = (rate as f32 * 1.5) as usize; // 1.5 s
+    let n_noise2 = (rate as f32 * 4.0) as usize; // 4 s — exceeds hang (2 s)
+
+    let noise1 = white_noise(rate, n_noise1, 0.1, 11);
+    let voice = fm_multitone_signal(rate, n_voice, 0.0, &[700.0, 1100.0, 1900.0], 4500.0, 1.0);
+    let noise2 = white_noise(rate, n_noise2, 0.1, 23);
+
+    noise1
+        .into_iter()
+        .chain(voice)
+        .chain(noise2)
+        .map(|c: Complex32| {
+            let i = (c.re * 127.5 + 127.5).clamp(0.0, 255.0) as u8;
+            let q = (c.im * 127.5 + 127.5).clamp(0.0, 255.0) as u8;
+            (i, q)
+        })
+        .collect()
+}
+
+fn free_port() -> String {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap();
+    drop(l);
+    addr.to_string()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn mock_sdr_end_to_end_lifecycle_over_ws() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("warn,hertz_daemon=info"))
+        .try_init();
+
+    let tmp = tempfile::tempdir().expect("tmp");
+    let pairs = Arc::new(build_mock_iq_pairs());
+    let pairs_for_closure = Arc::clone(&pairs);
+    let factory = MockFactory::from_closure(move |idx: u64| -> (u8, u8) {
+        pairs_for_closure[(idx as usize) % pairs_for_closure.len()]
+    });
+
+    let listen = free_port();
+    let config = DaemonConfig {
+        daemon: DaemonSettings {
+            listen: listen.clone(),
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            auth_token: None,
+        },
+        dongles: vec![DongleConfig {
+            serial: "MOCK01".into(),
+            role: DongleRole::Monitor,
+            bandplan: None,
+            tap_channel: None,
+            groups: None,
+            dwell_ms: Some(150),
+            priority: None,
+            squelch_db: 6.0,
+            record: true,
+            frequency_hz: Some(156_800_000),
+        }],
+        transcription: None,
+        tx: None,
+    };
+
+    let daemon = Daemon::start(config, Arc::new(factory), ChannelDb::new())
+        .await
+        .expect("daemon start");
+
+    // Give the worker + DSP thread a moment to prime, then open a WS to /stream.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let url = format!("ws://{listen}/stream?audio=all");
+
+    let mut ws = tokio::time::timeout(Duration::from_secs(3), async {
+        tokio_tungstenite::connect_async(&url).await
+    })
+    .await
+    .expect("ws connect timeout")
+    .expect("ws connect")
+    .0;
+
+    use futures::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut saw_hello = false;
+    let mut saw_open = false;
+    let mut saw_audio = false;
+    let mut saw_close = false;
+    let mut saw_recording_saved = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let next = tokio::time::timeout_at(deadline, ws.next()).await;
+        match next {
+            Err(_) => break, // timeout
+            Ok(None) => break,
+            Ok(Some(Err(e))) => panic!("ws error: {e}"),
+            Ok(Some(Ok(msg))) => match msg {
+                Message::Text(t) => {
+                    let parsed: WsServerMsg =
+                        serde_json::from_str(&t).unwrap_or_else(|e| panic!("parse {t}: {e}"));
+                    match parsed {
+                        WsServerMsg::Hello { dongles, .. } => {
+                            assert_eq!(dongles.len(), 1);
+                            assert_eq!(dongles[0].serial, "MOCK01");
+                            saw_hello = true;
+                        }
+                        WsServerMsg::Event(hertz_types::Event::SquelchEvent { open, .. }) => {
+                            if open {
+                                saw_open = true;
+                            } else {
+                                saw_close = true;
+                            }
+                        }
+                        WsServerMsg::Event(hertz_types::Event::RecordingSaved { .. }) => {
+                            saw_recording_saved = true;
+                        }
+                        _ => {}
+                    }
+                }
+                Message::Binary(_) => {
+                    saw_audio = true;
+                }
+                Message::Close(_) => break,
+                _ => {}
+            },
+        }
+        if saw_hello && saw_open && saw_audio && saw_close && saw_recording_saved {
+            break;
+        }
+    }
+    let _ = ws.close(None).await;
+
+    assert!(saw_hello, "never received WS Hello");
+    assert!(
+        saw_open,
+        "never saw squelch OPEN (voice burst not detected)"
+    );
+    assert!(saw_audio, "never saw any binary audio frames");
+    assert!(saw_close, "never saw squelch CLOSE (hang did not expire)");
+    assert!(
+        saw_recording_saved,
+        "never saw RecordingSaved (recorder did not write)"
+    );
+
+    // The WAV must exist on disk under data_dir/recordings.
+    let rec_dir = tmp.path().join("recordings");
+    let wavs: Vec<_> = std::fs::read_dir(&rec_dir)
+        .expect("recordings dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("wav"))
+        .collect();
+    assert!(!wavs.is_empty(), "no WAV written to {}", rec_dir.display());
+
+    // Graceful shutdown.
+    daemon.shutdown();
+    daemon.join().await;
+}

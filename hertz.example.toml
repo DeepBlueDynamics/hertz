@@ -1,0 +1,29 @@
+# /etc/hertz/hertz.toml
+[daemon]
+listen = "0.0.0.0:9080"
+data_dir = "/data"                    # recordings/, transcripts/, extracts/, logs/
+auth_token = "env:HERTZ_TOKEN"        # required for non-localhost + all MCP writes
+
+[[dongle]]
+serial = "MARINE01"
+role = "channelized"                  # one wideband capture, all channels demodulated at once
+bandplan = "marine-vhf-us"            # 2.4 MS/s @ 156.7375 MHz — whole band, zero retuning
+tap_channel = "16"                    # always-on audio tap
+squelch_db = 12.0
+record = true
+
+# Phase 5 - Uncomment to enable a second hopscan dongle
+# [[dongle]]
+# serial = "PUBLIC01"
+# role = "hopscan"                      # analog-scanner style retune-and-dwell
+# groups = ["frs-gmrs", "murs", "noaa-wx", "ham-2m-simplex", "railroad-aar"]
+# dwell_ms = 150                        # per-stop power check; lock while squelch open
+# priority = ["noaa-wx:WX2"]            # interleaved priority checks during lock
+# squelch_db = 9.0
+# record = true
+
+# Transcription config (currently disabled)
+# [transcription]
+# engine = "whisper-internal"
+# model = "small"
+# language = "auto"

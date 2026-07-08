@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+pub mod wire;
+pub use wire::{
+    ActivityEntry, DecodedAudioFrame, DoctorReport, DongleDoctorEntry, DongleSummary,
+    ListenRequest, RecordingFileEntry, RecordingRequest, SquelchRequest, StatusResponse,
+    TranscriptEntry, TuneRequest, WsServerMsg,
+};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Event {
