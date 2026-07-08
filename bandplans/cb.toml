@@ -1,0 +1,499 @@
+group = "cb"
+center_hz = 27185000
+sample_rate = 1000000
+
+[[channel]]
+id = "cb-1"
+name = "CB 1"
+freq_hz = 26965000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-2"
+name = "CB 2"
+freq_hz = 26975000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-3"
+name = "CB 3"
+freq_hz = 26985000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-4"
+name = "CB 4"
+freq_hz = 27005000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-5"
+name = "CB 5"
+freq_hz = 27015000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-6"
+name = "CB 6"
+freq_hz = 27025000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-7"
+name = "CB 7"
+freq_hz = 27035000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-8"
+name = "CB 8"
+freq_hz = 27055000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-9"
+name = "CB 9"
+freq_hz = 27065000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-10"
+name = "CB 10"
+freq_hz = 27075000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-11"
+name = "CB 11"
+freq_hz = 27085000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-12"
+name = "CB 12"
+freq_hz = 27105000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-13"
+name = "CB 13"
+freq_hz = 27115000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-14"
+name = "CB 14"
+freq_hz = 27125000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-15"
+name = "CB 15"
+freq_hz = 27135000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-16"
+name = "CB 16"
+freq_hz = 27155000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-17"
+name = "CB 17"
+freq_hz = 27165000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-18"
+name = "CB 18"
+freq_hz = 27175000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-19"
+name = "CB 19"
+freq_hz = 27185000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-20"
+name = "CB 20"
+freq_hz = 27205000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-21"
+name = "CB 21"
+freq_hz = 27215000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-22"
+name = "CB 22"
+freq_hz = 27225000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-23"
+name = "CB 23"
+freq_hz = 27255000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-24"
+name = "CB 24"
+freq_hz = 27235000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-25"
+name = "CB 25"
+freq_hz = 27245000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-26"
+name = "CB 26"
+freq_hz = 27265000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-27"
+name = "CB 27"
+freq_hz = 27275000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-28"
+name = "CB 28"
+freq_hz = 27285000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-29"
+name = "CB 29"
+freq_hz = 27295000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-30"
+name = "CB 30"
+freq_hz = 27305000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-31"
+name = "CB 31"
+freq_hz = 27315000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-32"
+name = "CB 32"
+freq_hz = 27325000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-33"
+name = "CB 33"
+freq_hz = 27335000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-34"
+name = "CB 34"
+freq_hz = 27345000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-35"
+name = "CB 35"
+freq_hz = 27355000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-36"
+name = "CB 36"
+freq_hz = 27365000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-37"
+name = "CB 37"
+freq_hz = 27375000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-38"
+name = "CB 38"
+freq_hz = 27385000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-39"
+name = "CB 39"
+freq_hz = 27395000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-40"
+name = "CB 40"
+freq_hz = 27405000
+mode = "am"
+bandwidth_hz = 10000
+group = "cb"
+label = "CB-AM"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-36-usb"
+name = "CB 36 USB"
+freq_hz = 27365000
+mode = "usb"
+bandwidth_hz = 3000
+group = "cb"
+label = "CB-USB"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-37-usb"
+name = "CB 37 USB"
+freq_hz = 27375000
+mode = "usb"
+bandwidth_hz = 3000
+group = "cb"
+label = "CB-USB"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-38-usb"
+name = "CB 38 USB"
+freq_hz = 27385000
+mode = "usb"
+bandwidth_hz = 3000
+group = "cb"
+label = "CB-USB"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-39-usb"
+name = "CB 39 USB"
+freq_hz = 27395000
+mode = "usb"
+bandwidth_hz = 3000
+group = "cb"
+label = "CB-USB"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "cb-40-usb"
+name = "CB 40 USB"
+freq_hz = 27405000
+mode = "usb"
+bandwidth_hz = 3000
+group = "cb"
+label = "CB-USB"
+rx = true
+tx_policy = "certified-radio+none"
+

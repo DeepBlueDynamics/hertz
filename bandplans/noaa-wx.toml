@@ -1,0 +1,88 @@
+group = "noaa-wx"
+center_hz = 162475000
+sample_rate = 1000000
+
+[[channel]]
+id = "WX1"
+name = "WX 1"
+freq_hz = 162550000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+
+[[channel]]
+id = "WX2"
+name = "WX 2"
+freq_hz = 162400000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+
+[[channel]]
+id = "WX3"
+name = "WX 3"
+freq_hz = 162475000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+
+[[channel]]
+id = "WX4"
+name = "WX 4"
+freq_hz = 162425000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+
+[[channel]]
+id = "WX5"
+name = "WX 5"
+freq_hz = 162450000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+
+[[channel]]
+id = "WX6"
+name = "WX 6"
+freq_hz = 162500000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+
+[[channel]]
+id = "WX7"
+name = "WX 7"
+freq_hz = 162525000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "noaa-wx"
+label = "WEATHER"
+rx = true
+tx_policy = "never"
+continuous_carrier = true
+

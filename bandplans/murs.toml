@@ -1,0 +1,57 @@
+group = "murs"
+
+[[channel]]
+id = "murs-1"
+name = "MURS 1"
+freq_hz = 151820000
+mode = "nfm"
+bandwidth_hz = 11250
+group = "murs"
+label = "MURS"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "murs-2"
+name = "MURS 2"
+freq_hz = 151880000
+mode = "nfm"
+bandwidth_hz = 11250
+group = "murs"
+label = "MURS"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "murs-3"
+name = "MURS 3"
+freq_hz = 151940000
+mode = "nfm"
+bandwidth_hz = 11250
+group = "murs"
+label = "MURS"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "murs-4"
+name = "MURS 4"
+freq_hz = 154570000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "murs"
+label = "MURS"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "murs-5"
+name = "MURS 5"
+freq_hz = 154600000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "murs"
+label = "MURS"
+rx = true
+tx_policy = "certified-radio+none"
+

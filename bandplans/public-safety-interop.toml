@@ -1,0 +1,332 @@
+group = "public-safety-interop"
+
+[[channel]]
+id = "vcall10"
+name = "VCALL10"
+freq_hz = 155752500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "vtac11"
+name = "VTAC11"
+freq_hz = 151137500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "vtac12"
+name = "VTAC12"
+freq_hz = 154452500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "vtac13"
+name = "VTAC13"
+freq_hz = 158737500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "vtac14"
+name = "VTAC14"
+freq_hz = 159472500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-1"
+name = "Public Safety 1"
+freq_hz = 155475000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-2"
+name = "Public Safety 2"
+freq_hz = 155370000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-3"
+name = "Public Safety 3"
+freq_hz = 155340000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-4"
+name = "Public Safety 4"
+freq_hz = 155280000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-5"
+name = "Public Safety 5"
+freq_hz = 155160000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-6"
+name = "Public Safety 6"
+freq_hz = 154280000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-7"
+name = "Public Safety 7"
+freq_hz = 154260000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-8"
+name = "Public Safety 8"
+freq_hz = 154290000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-9"
+name = "Public Safety 9"
+freq_hz = 153830000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-10"
+name = "Public Safety 10"
+freq_hz = 154815000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-11"
+name = "Public Safety 11"
+freq_hz = 154875000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-12"
+name = "Public Safety 12"
+freq_hz = 155070000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-13"
+name = "Public Safety 13"
+freq_hz = 155205000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-14"
+name = "Public Safety 14"
+freq_hz = 155220000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-15"
+name = "Public Safety 15"
+freq_hz = 155325000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-16"
+name = "Public Safety 16"
+freq_hz = 155355000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-17"
+name = "Public Safety 17"
+freq_hz = 155385000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-18"
+name = "Public Safety 18"
+freq_hz = 155400000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-19"
+name = "Public Safety 19"
+freq_hz = 155415000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-20"
+name = "Public Safety 20"
+freq_hz = 155430000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-21"
+name = "Public Safety 21"
+freq_hz = 155490000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-22"
+name = "Public Safety 22"
+freq_hz = 155505000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-23"
+name = "Public Safety 23"
+freq_hz = 155520000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-24"
+name = "Public Safety 24"
+freq_hz = 155535000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ps-25"
+name = "Public Safety 25"
+freq_hz = 155550000
+mode = "nfm"
+bandwidth_hz = 12500
+group = "public-safety-interop"
+label = "INTEROP"
+rx = true
+tx_policy = "never"
+

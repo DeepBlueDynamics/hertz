@@ -1,0 +1,332 @@
+group = "frs-gmrs"
+
+[[channel]]
+id = "gmrs-1"
+name = "GMRS 1"
+freq_hz = 462562500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-2"
+name = "GMRS 2"
+freq_hz = 462587500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-3"
+name = "GMRS 3"
+freq_hz = 462612500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-4"
+name = "GMRS 4"
+freq_hz = 462637500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-5"
+name = "GMRS 5"
+freq_hz = 462662500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-6"
+name = "GMRS 6"
+freq_hz = 462687500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-7"
+name = "GMRS 7"
+freq_hz = 462712500
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INTER"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-8"
+name = "FRS 8"
+freq_hz = 467562500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-9"
+name = "FRS 9"
+freq_hz = 467587500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-10"
+name = "FRS 10"
+freq_hz = 467612500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-11"
+name = "FRS 11"
+freq_hz = 467637500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-12"
+name = "FRS 12"
+freq_hz = 467662500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-13"
+name = "FRS 13"
+freq_hz = 467687500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "frs-14"
+name = "FRS 14"
+freq_hz = 467712500
+mode = "nfm"
+bandwidth_hz = 12500
+group = "frs-gmrs"
+label = "FRS-ONLY"
+rx = true
+tx_policy = "certified-radio+none"
+
+[[channel]]
+id = "gmrs-15"
+name = "GMRS 15"
+freq_hz = 462550000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-16"
+name = "GMRS 16"
+freq_hz = 462575000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-17"
+name = "GMRS 17"
+freq_hz = 462600000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-18"
+name = "GMRS 18"
+freq_hz = 462625000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-19"
+name = "GMRS 19"
+freq_hz = 462650000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-20"
+name = "GMRS 20"
+freq_hz = 462675000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-21"
+name = "GMRS 21"
+freq_hz = 462700000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-22"
+name = "GMRS 22"
+freq_hz = 462725000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-MAIN"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-15"
+name = "GMRS Repeater Input 15"
+freq_hz = 467550000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-16"
+name = "GMRS Repeater Input 16"
+freq_hz = 467575000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-17"
+name = "GMRS Repeater Input 17"
+freq_hz = 467600000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-18"
+name = "GMRS Repeater Input 18"
+freq_hz = 467625000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-19"
+name = "GMRS Repeater Input 19"
+freq_hz = 467650000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-20"
+name = "GMRS Repeater Input 20"
+freq_hz = 467675000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-21"
+name = "GMRS Repeater Input 21"
+freq_hz = 467700000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+
+[[channel]]
+id = "gmrs-rep-22"
+name = "GMRS Repeater Input 22"
+freq_hz = 467725000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "frs-gmrs"
+label = "GMRS-INPUT"
+rx = true
+tx_policy = "certified-radio+gmrs-license"
+

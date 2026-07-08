@@ -1,0 +1,1005 @@
+group = "railroad-aar"
+center_hz = 160890000
+sample_rate = 2000000
+
+[[channel]]
+id = "aar-7"
+name = "AAR 07"
+freq_hz = 160215000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-8"
+name = "AAR 08"
+freq_hz = 160230000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-9"
+name = "AAR 09"
+freq_hz = 160245000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-10"
+name = "AAR 10"
+freq_hz = 160260000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-11"
+name = "AAR 11"
+freq_hz = 160275000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-12"
+name = "AAR 12"
+freq_hz = 160290000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-13"
+name = "AAR 13"
+freq_hz = 160305000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-14"
+name = "AAR 14"
+freq_hz = 160320000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-15"
+name = "AAR 15"
+freq_hz = 160335000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-16"
+name = "AAR 16"
+freq_hz = 160350000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-17"
+name = "AAR 17"
+freq_hz = 160365000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-18"
+name = "AAR 18"
+freq_hz = 160380000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-19"
+name = "AAR 19"
+freq_hz = 160395000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-20"
+name = "AAR 20"
+freq_hz = 160410000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-21"
+name = "AAR 21"
+freq_hz = 160425000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-22"
+name = "AAR 22"
+freq_hz = 160440000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-23"
+name = "AAR 23"
+freq_hz = 160455000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-24"
+name = "AAR 24"
+freq_hz = 160470000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-25"
+name = "AAR 25"
+freq_hz = 160485000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-26"
+name = "AAR 26"
+freq_hz = 160500000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-27"
+name = "AAR 27"
+freq_hz = 160515000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-28"
+name = "AAR 28"
+freq_hz = 160530000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-29"
+name = "AAR 29"
+freq_hz = 160545000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-30"
+name = "AAR 30"
+freq_hz = 160560000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-31"
+name = "AAR 31"
+freq_hz = 160575000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-32"
+name = "AAR 32"
+freq_hz = 160590000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-33"
+name = "AAR 33"
+freq_hz = 160605000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-34"
+name = "AAR 34"
+freq_hz = 160620000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-35"
+name = "AAR 35"
+freq_hz = 160635000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-36"
+name = "AAR 36"
+freq_hz = 160650000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-37"
+name = "AAR 37"
+freq_hz = 160665000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-38"
+name = "AAR 38"
+freq_hz = 160680000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-39"
+name = "AAR 39"
+freq_hz = 160695000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-40"
+name = "AAR 40"
+freq_hz = 160710000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-41"
+name = "AAR 41"
+freq_hz = 160725000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-42"
+name = "AAR 42"
+freq_hz = 160740000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-43"
+name = "AAR 43"
+freq_hz = 160755000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-44"
+name = "AAR 44"
+freq_hz = 160770000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-45"
+name = "AAR 45"
+freq_hz = 160785000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-46"
+name = "AAR 46"
+freq_hz = 160800000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-47"
+name = "AAR 47"
+freq_hz = 160815000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-48"
+name = "AAR 48"
+freq_hz = 160830000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-49"
+name = "AAR 49"
+freq_hz = 160845000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-50"
+name = "AAR 50"
+freq_hz = 160860000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-51"
+name = "AAR 51"
+freq_hz = 160875000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-52"
+name = "AAR 52"
+freq_hz = 160890000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-53"
+name = "AAR 53"
+freq_hz = 160905000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-54"
+name = "AAR 54"
+freq_hz = 160920000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-55"
+name = "AAR 55"
+freq_hz = 160935000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-56"
+name = "AAR 56"
+freq_hz = 160950000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-57"
+name = "AAR 57"
+freq_hz = 160965000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-58"
+name = "AAR 58"
+freq_hz = 160980000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-59"
+name = "AAR 59"
+freq_hz = 160995000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-60"
+name = "AAR 60"
+freq_hz = 161010000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-61"
+name = "AAR 61"
+freq_hz = 161025000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-62"
+name = "AAR 62"
+freq_hz = 161040000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-63"
+name = "AAR 63"
+freq_hz = 161055000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-64"
+name = "AAR 64"
+freq_hz = 161070000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-65"
+name = "AAR 65"
+freq_hz = 161085000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-66"
+name = "AAR 66"
+freq_hz = 161100000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-67"
+name = "AAR 67"
+freq_hz = 161115000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-68"
+name = "AAR 68"
+freq_hz = 161130000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-69"
+name = "AAR 69"
+freq_hz = 161145000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-70"
+name = "AAR 70"
+freq_hz = 161160000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-71"
+name = "AAR 71"
+freq_hz = 161175000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-72"
+name = "AAR 72"
+freq_hz = 161190000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-73"
+name = "AAR 73"
+freq_hz = 161205000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-74"
+name = "AAR 74"
+freq_hz = 161220000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-75"
+name = "AAR 75"
+freq_hz = 161235000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-76"
+name = "AAR 76"
+freq_hz = 161250000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-77"
+name = "AAR 77"
+freq_hz = 161265000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-78"
+name = "AAR 78"
+freq_hz = 161280000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-79"
+name = "AAR 79"
+freq_hz = 161295000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-80"
+name = "AAR 80"
+freq_hz = 161310000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-81"
+name = "AAR 81"
+freq_hz = 161325000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-82"
+name = "AAR 82"
+freq_hz = 161340000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-83"
+name = "AAR 83"
+freq_hz = 161355000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-84"
+name = "AAR 84"
+freq_hz = 161370000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-85"
+name = "AAR 85"
+freq_hz = 161385000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-86"
+name = "AAR 86"
+freq_hz = 161400000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-87"
+name = "AAR 87"
+freq_hz = 161415000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-88"
+name = "AAR 88"
+freq_hz = 161430000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-89"
+name = "AAR 89"
+freq_hz = 161445000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-90"
+name = "AAR 90"
+freq_hz = 161460000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-91"
+name = "AAR 91"
+freq_hz = 161475000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-92"
+name = "AAR 92"
+freq_hz = 161490000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-93"
+name = "AAR 93"
+freq_hz = 161505000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-94"
+name = "AAR 94"
+freq_hz = 161520000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-95"
+name = "AAR 95"
+freq_hz = 161535000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-96"
+name = "AAR 96"
+freq_hz = 161550000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "aar-97"
+name = "AAR 97"
+freq_hz = 161565000
+mode = "nfm"
+bandwidth_hz = 15000
+group = "railroad-aar"
+label = "RAILROAD"
+rx = true
+tx_policy = "never"
+

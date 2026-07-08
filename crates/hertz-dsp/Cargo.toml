@@ -2,8 +2,11 @@
 name = "hertz-dsp"
 version = "0.1.0"
 edition = "2021"
+description = "Pure DSP library for Hertz: channelizer, NFM/AM demod, entropy squelch, AFC, recorder."
 
 [dependencies]
-hertz-types = { path = "../hertz-types" }
 num-complex = { workspace = true }
 rustfft = { workspace = true }
+hound = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }

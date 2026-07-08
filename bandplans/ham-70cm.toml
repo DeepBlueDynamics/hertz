@@ -1,0 +1,387 @@
+group = "ham-70cm"
+
+[[channel]]
+id = "ham-70cm-446000"
+name = "Ham 70cm Calling"
+freq_hz = 446000000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "CALL"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-1"
+name = "Ham 70cm Simplex 1"
+freq_hz = 446025000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-2"
+name = "Ham 70cm Simplex 2"
+freq_hz = 446050000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-3"
+name = "Ham 70cm Simplex 3"
+freq_hz = 446075000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-4"
+name = "Ham 70cm Simplex 4"
+freq_hz = 446100000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-5"
+name = "Ham 70cm Simplex 5"
+freq_hz = 446125000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-6"
+name = "Ham 70cm Simplex 6"
+freq_hz = 446150000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-7"
+name = "Ham 70cm Simplex 7"
+freq_hz = 446175000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-8"
+name = "Ham 70cm Simplex 8"
+freq_hz = 446200000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-sim-9"
+name = "Ham 70cm Simplex 9"
+freq_hz = 446225000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-1"
+name = "Ham 70cm Repeater 1"
+freq_hz = 442000000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-2"
+name = "Ham 70cm Repeater 2"
+freq_hz = 442150000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-3"
+name = "Ham 70cm Repeater 3"
+freq_hz = 442300000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-4"
+name = "Ham 70cm Repeater 4"
+freq_hz = 442450000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-5"
+name = "Ham 70cm Repeater 5"
+freq_hz = 442600000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-6"
+name = "Ham 70cm Repeater 6"
+freq_hz = 442750000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-7"
+name = "Ham 70cm Repeater 7"
+freq_hz = 442900000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-8"
+name = "Ham 70cm Repeater 8"
+freq_hz = 443050000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-9"
+name = "Ham 70cm Repeater 9"
+freq_hz = 443200000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-10"
+name = "Ham 70cm Repeater 10"
+freq_hz = 443350000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-11"
+name = "Ham 70cm Repeater 11"
+freq_hz = 443500000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-12"
+name = "Ham 70cm Repeater 12"
+freq_hz = 443650000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-13"
+name = "Ham 70cm Repeater 13"
+freq_hz = 443800000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-14"
+name = "Ham 70cm Repeater 14"
+freq_hz = 443950000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-15"
+name = "Ham 70cm Repeater 15"
+freq_hz = 444100000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-16"
+name = "Ham 70cm Repeater 16"
+freq_hz = 444250000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-17"
+name = "Ham 70cm Repeater 17"
+freq_hz = 444400000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-18"
+name = "Ham 70cm Repeater 18"
+freq_hz = 444550000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-19"
+name = "Ham 70cm Repeater 19"
+freq_hz = 444700000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-20"
+name = "Ham 70cm Repeater 20"
+freq_hz = 444850000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-21"
+name = "Ham 70cm Repeater 21"
+freq_hz = 445000000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-22"
+name = "Ham 70cm Repeater 22"
+freq_hz = 445150000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-23"
+name = "Ham 70cm Repeater 23"
+freq_hz = 445300000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-24"
+name = "Ham 70cm Repeater 24"
+freq_hz = 445450000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-70cm-rep-25"
+name = "Ham 70cm Repeater 25"
+freq_hz = 445600000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-70cm"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+

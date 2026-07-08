@@ -1,0 +1,607 @@
+group = "marine-vhf-us"
+
+[[channel]]
+id = "1"
+name = "Channel 1"
+freq_hz = 156050000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT-VTS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "5"
+name = "Channel 5"
+freq_hz = 156250000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT-VTS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "6"
+name = "Channel 6"
+freq_hz = 156300000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "SAFETY"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "7"
+name = "Channel 7"
+freq_hz = 156350000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "8"
+name = "Channel 8"
+freq_hz = 156400000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM-IS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "9"
+name = "Channel 9"
+freq_hz = 156450000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "CALL"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "10"
+name = "Channel 10"
+freq_hz = 156500000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "11"
+name = "Channel 11"
+freq_hz = 156550000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM-VTS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "12"
+name = "Channel 12"
+freq_hz = 156600000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT-VTS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "13"
+name = "Channel 13"
+freq_hz = 156650000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "BRIDGE"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "14"
+name = "Channel 14"
+freq_hz = 156700000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT-VTS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "15"
+name = "Channel 15"
+freq_hz = 156750000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "16"
+name = "Channel 16"
+freq_hz = 156800000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "SAFETY-CALL"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "17"
+name = "Channel 17"
+freq_hz = 156850000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "STATE"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "18"
+name = "Channel 18"
+freq_hz = 156900000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "19"
+name = "Channel 19"
+freq_hz = 156950000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "20"
+name = "Channel 20"
+freq_hz = 157000000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "21"
+name = "Channel 21"
+freq_hz = 157050000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "USCG"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "22"
+name = "Channel 22"
+freq_hz = 157100000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "USCG-LINK"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "23"
+name = "Channel 23"
+freq_hz = 157150000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "USCG"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "24"
+name = "Channel 24"
+freq_hz = 157200000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "25"
+name = "Channel 25"
+freq_hz = 157250000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "26"
+name = "Channel 26"
+freq_hz = 157300000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "27"
+name = "Channel 27"
+freq_hz = 157350000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "28"
+name = "Channel 28"
+freq_hz = 157400000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "63"
+name = "Channel 63"
+freq_hz = 156175000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT-VTS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "65"
+name = "Channel 65"
+freq_hz = 156275000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "66"
+name = "Channel 66"
+freq_hz = 156325000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "67"
+name = "Channel 67"
+freq_hz = 156375000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "BRIDGE-MS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "68"
+name = "Channel 68"
+freq_hz = 156425000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "NON-COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "69"
+name = "Channel 69"
+freq_hz = 156475000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "NON-COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "70"
+name = "Channel 70"
+freq_hz = 156525000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "DSC"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "71"
+name = "Channel 71"
+freq_hz = 156575000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "NON-COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "72"
+name = "Channel 72"
+freq_hz = 156625000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "NON-COMM-IS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "73"
+name = "Channel 73"
+freq_hz = 156675000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "74"
+name = "Channel 74"
+freq_hz = 156725000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "77"
+name = "Channel 77"
+freq_hz = 156875000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "PORT-PILOT"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "78"
+name = "Channel 78"
+freq_hz = 156925000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "NON-COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "79"
+name = "Channel 79"
+freq_hz = 156975000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "80"
+name = "Channel 80"
+freq_hz = 157025000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "81"
+name = "Channel 81"
+freq_hz = 157075000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "GOV-ENV"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "82"
+name = "Channel 82"
+freq_hz = 157125000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "GOV"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "83"
+name = "Channel 83"
+freq_hz = 157175000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "USCG"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "84"
+name = "Channel 84"
+freq_hz = 157225000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "85"
+name = "Channel 85"
+freq_hz = 157275000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "86"
+name = "Channel 86"
+freq_hz = 157325000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "87"
+name = "Channel 87"
+freq_hz = 157375000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "MARINE-OP"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "88"
+name = "Channel 88"
+freq_hz = 157425000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "COMM-IS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-1"
+name = "WX 1"
+freq_hz = 162550000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-2"
+name = "WX 2"
+freq_hz = 162400000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-3"
+name = "WX 3"
+freq_hz = 162475000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-4"
+name = "WX 4"
+freq_hz = 162425000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-5"
+name = "WX 5"
+freq_hz = 162450000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-6"
+name = "WX 6"
+freq_hz = 162500000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "marine-wx-7"
+name = "WX 7"
+freq_hz = 162525000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-vhf-us"
+label = "ENV-RX"
+rx = true
+tx_policy = "never"
+

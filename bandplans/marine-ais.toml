@@ -1,0 +1,26 @@
+group = "marine-ais"
+center_hz = 162000000
+sample_rate = 250000
+
+[[channel]]
+id = "ais-1"
+name = "AIS 1"
+freq_hz = 161975000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-ais"
+label = "AIS"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "ais-2"
+name = "AIS 2"
+freq_hz = 162025000
+mode = "nfm"
+bandwidth_hz = 25000
+group = "marine-ais"
+label = "AIS"
+rx = true
+tx_policy = "never"
+

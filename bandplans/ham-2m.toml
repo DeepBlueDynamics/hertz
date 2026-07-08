@@ -1,0 +1,508 @@
+group = "ham-2m"
+
+[[channel]]
+id = "ham-2m-146520"
+name = "Ham 2m Calling"
+freq_hz = 146520000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "CALL"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-1"
+name = "Ham 2m Simplex 1"
+freq_hz = 146400000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-2"
+name = "Ham 2m Simplex 2"
+freq_hz = 146420000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-3"
+name = "Ham 2m Simplex 3"
+freq_hz = 146440000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-4"
+name = "Ham 2m Simplex 4"
+freq_hz = 146460000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-5"
+name = "Ham 2m Simplex 5"
+freq_hz = 146480000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-6"
+name = "Ham 2m Simplex 6"
+freq_hz = 146500000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-7"
+name = "Ham 2m Simplex 7"
+freq_hz = 146540000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-8"
+name = "Ham 2m Simplex 8"
+freq_hz = 146550000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-9"
+name = "Ham 2m Simplex 9"
+freq_hz = 146560000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-10"
+name = "Ham 2m Simplex 10"
+freq_hz = 146580000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-11"
+name = "Ham 2m Simplex 11"
+freq_hz = 147420000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-12"
+name = "Ham 2m Simplex 12"
+freq_hz = 147450000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-13"
+name = "Ham 2m Simplex 13"
+freq_hz = 147480000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-14"
+name = "Ham 2m Simplex 14"
+freq_hz = 147510000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-15"
+name = "Ham 2m Simplex 15"
+freq_hz = 147540000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-sim-16"
+name = "Ham 2m Simplex 16"
+freq_hz = 147570000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "SIMPLEX"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-1"
+name = "Ham 2m Repeater 1"
+freq_hz = 146610000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-2"
+name = "Ham 2m Repeater 2"
+freq_hz = 146640000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-3"
+name = "Ham 2m Repeater 3"
+freq_hz = 146670000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-4"
+name = "Ham 2m Repeater 4"
+freq_hz = 146700000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-5"
+name = "Ham 2m Repeater 5"
+freq_hz = 146730000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-6"
+name = "Ham 2m Repeater 6"
+freq_hz = 146760000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-7"
+name = "Ham 2m Repeater 7"
+freq_hz = 146790000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-8"
+name = "Ham 2m Repeater 8"
+freq_hz = 146820000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-9"
+name = "Ham 2m Repeater 9"
+freq_hz = 146850000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-10"
+name = "Ham 2m Repeater 10"
+freq_hz = 146880000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-11"
+name = "Ham 2m Repeater 11"
+freq_hz = 146910000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-12"
+name = "Ham 2m Repeater 12"
+freq_hz = 146940000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-13"
+name = "Ham 2m Repeater 13"
+freq_hz = 146970000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-14"
+name = "Ham 2m Repeater 14"
+freq_hz = 147000000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-15"
+name = "Ham 2m Repeater 15"
+freq_hz = 147030000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-16"
+name = "Ham 2m Repeater 16"
+freq_hz = 147060000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-17"
+name = "Ham 2m Repeater 17"
+freq_hz = 147090000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-18"
+name = "Ham 2m Repeater 18"
+freq_hz = 147120000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-19"
+name = "Ham 2m Repeater 19"
+freq_hz = 147150000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-20"
+name = "Ham 2m Repeater 20"
+freq_hz = 147180000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-21"
+name = "Ham 2m Repeater 21"
+freq_hz = 147210000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-22"
+name = "Ham 2m Repeater 22"
+freq_hz = 147240000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-23"
+name = "Ham 2m Repeater 23"
+freq_hz = 147270000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-24"
+name = "Ham 2m Repeater 24"
+freq_hz = 147300000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-25"
+name = "Ham 2m Repeater 25"
+freq_hz = 147330000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-26"
+name = "Ham 2m Repeater 26"
+freq_hz = 147360000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-27"
+name = "Ham 2m Repeater 27"
+freq_hz = 147390000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-28"
+name = "Ham 2m Repeater 28"
+freq_hz = 147400000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+
+[[channel]]
+id = "ham-2m-rep-29"
+name = "Ham 2m Repeater 29"
+freq_hz = 147410000
+mode = "nfm"
+bandwidth_hz = 20000
+group = "ham-2m"
+label = "REPEATER"
+rx = true
+tx_policy = "sdr-or-radio+ham-license"
+

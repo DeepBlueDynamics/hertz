@@ -1,0 +1,442 @@
+group = "airband"
+
+[[channel]]
+id = "air-121500"
+name = "Airband Guard"
+freq_hz = 121500000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "GUARD"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-1"
+name = "Airband Freq 1"
+freq_hz = 122700000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-2"
+name = "Airband Freq 2"
+freq_hz = 122725000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-3"
+name = "Airband Freq 3"
+freq_hz = 122750000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-4"
+name = "Airband Freq 4"
+freq_hz = 122800000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-5"
+name = "Airband Freq 5"
+freq_hz = 122825000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-6"
+name = "Airband Freq 6"
+freq_hz = 122850000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-7"
+name = "Airband Freq 7"
+freq_hz = 122900000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-8"
+name = "Airband Freq 8"
+freq_hz = 122925000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-9"
+name = "Airband Freq 9"
+freq_hz = 122950000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-10"
+name = "Airband Freq 10"
+freq_hz = 122975000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-11"
+name = "Airband Freq 11"
+freq_hz = 123000000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-12"
+name = "Airband Freq 12"
+freq_hz = 123025000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-13"
+name = "Airband Freq 13"
+freq_hz = 123050000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-14"
+name = "Airband Freq 14"
+freq_hz = 123075000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-15"
+name = "Airband Freq 15"
+freq_hz = 123100000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-16"
+name = "Airband Freq 16"
+freq_hz = 123300000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-17"
+name = "Airband Freq 17"
+freq_hz = 123325000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-18"
+name = "Airband Freq 18"
+freq_hz = 123350000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-19"
+name = "Airband Freq 19"
+freq_hz = 123400000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-20"
+name = "Airband Freq 20"
+freq_hz = 123425000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-21"
+name = "Airband Freq 21"
+freq_hz = 123450000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-22"
+name = "Airband Freq 22"
+freq_hz = 123475000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-23"
+name = "Airband Freq 23"
+freq_hz = 123500000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-24"
+name = "Airband Freq 24"
+freq_hz = 123525000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-25"
+name = "Airband Freq 25"
+freq_hz = 123550000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-26"
+name = "Airband Freq 26"
+freq_hz = 123575000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-27"
+name = "Airband Freq 27"
+freq_hz = 123600000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-28"
+name = "Airband Freq 28"
+freq_hz = 123625000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-29"
+name = "Airband Freq 29"
+freq_hz = 123650000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-30"
+name = "Airband Freq 30"
+freq_hz = 123700000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-31"
+name = "Airband Freq 31"
+freq_hz = 123725000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-32"
+name = "Airband Freq 32"
+freq_hz = 123750000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-33"
+name = "Airband Freq 33"
+freq_hz = 123775000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-34"
+name = "Airband Freq 34"
+freq_hz = 123800000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-35"
+name = "Airband Freq 35"
+freq_hz = 123825000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-36"
+name = "Airband Freq 36"
+freq_hz = 123850000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-37"
+name = "Airband Freq 37"
+freq_hz = 123875000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-38"
+name = "Airband Freq 38"
+freq_hz = 123900000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
+[[channel]]
+id = "air-39"
+name = "Airband Freq 39"
+freq_hz = 123925000
+mode = "am"
+bandwidth_hz = 25000
+group = "airband"
+label = "UNICOM"
+rx = true
+tx_policy = "never"
+
