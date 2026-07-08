@@ -1,0 +1,7 @@
+[package]
+name = "hertz-tx"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hertz-types = { path = "../hertz-types" }

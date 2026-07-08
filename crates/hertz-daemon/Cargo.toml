@@ -1,0 +1,11 @@
+[package]
+name = "hertz-daemon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hertz-types = { path = "../hertz-types" }
+hertz-channels = { path = "../hertz-channels" }
+hertz-sdr = { path = "../hertz-sdr" }
+hertz-dsp = { path = "../hertz-dsp" }
+hertz-tx = { path = "../hertz-tx" }

@@ -1,0 +1,6 @@
+target/
+data/
+.env
+*.wav
+!**/fixtures/**/*.wav
+!**/fixtures/*.wav

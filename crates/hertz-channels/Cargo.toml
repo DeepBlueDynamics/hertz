@@ -1,0 +1,12 @@
+[package]
+name = "hertz-channels"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hertz-types = { path = "../hertz-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }

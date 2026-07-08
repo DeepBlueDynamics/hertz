@@ -1,0 +1,9 @@
+[package]
+name = "hertz-dsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hertz-types = { path = "../hertz-types" }
+num-complex = { workspace = true }
+rustfft = { workspace = true }
