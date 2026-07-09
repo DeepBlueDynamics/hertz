@@ -209,11 +209,13 @@ struct AppState {
     tune_dialog: Option<String>,
     squelch_dialog: Option<String>,
     tx_dialog: Option<TxState>,
+    help_dialog: bool,
 
     // Status / Msg
     status_message: String,
     status_time: Instant,
     tx_enabled: bool,
+    audio_available: bool,
 }
 
 #[derive(Clone)]
@@ -246,9 +248,11 @@ impl AppState {
             tune_dialog: None,
             squelch_dialog: None,
             tx_dialog: None,
+            help_dialog: false,
             status_message: "Press '?' for help".to_string(),
             status_time: Instant::now(),
             tx_enabled: false,
+            audio_available: true,
         }
     }
 
@@ -566,6 +570,16 @@ async fn run_tui(
 ) -> anyhow::Result<()> {
     let config = Config::load();
 
+    // Suppress stderr to prevent stray ALSA configuration messages from corrupting the screen
+    redirect_stderr_to_null();
+
+    // Initialize audio player before entering raw mode/alternate screen to avoid any terminal pollution
+    let (audio_player, audio_tx) = if let Some((ap, tx)) = AudioPlayer::new(no_audio) {
+        (Some(ap), Some(tx))
+    } else {
+        (None, None)
+    };
+
     // Setup terminal
     crossterm::terminal::enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -590,6 +604,7 @@ async fn run_tui(
     }));
 
     let mut state = AppState::new(&config);
+    state.audio_available = audio_tx.is_some();
     let palette = Palette::new();
 
     // Channels for async communication
@@ -598,11 +613,6 @@ async fn run_tui(
 
     // Shared flags
     let keyed = Arc::new(AtomicBool::new(false));
-    let (audio_player, audio_tx) = if let Some((ap, tx)) = AudioPlayer::new(no_audio) {
-        (Some(ap), Some(tx))
-    } else {
-        (None, None)
-    };
     let _player = audio_player; // keep stream alive on the main thread
     let audio_tx_shared = Arc::new(Mutex::new(audio_tx));
     let selected_dongle_id = Arc::new(Mutex::new(None));
@@ -787,7 +797,12 @@ async fn run_tui(
                 }
 
                 // Check if dialog is open
-                if let Some(ref mut val) = state.tune_dialog {
+                if state.help_dialog {
+                    match k.code {
+                        KeyCode::Esc | KeyCode::Char('?') => state.help_dialog = false,
+                        _ => {}
+                    }
+                } else if let Some(ref mut val) = state.tune_dialog {
                     match k.code {
                         KeyCode::Esc => state.tune_dialog = None,
                         KeyCode::Enter => {
@@ -881,6 +896,24 @@ async fn run_tui(
                 } else {
                     // Global Hotkeys
                     match k.code {
+                        KeyCode::Char('?') => {
+                            state.help_dialog = true;
+                        }
+                        KeyCode::F(1) => {
+                            state.focused_pane = PaneType::Dongles;
+                        }
+                        KeyCode::F(2) => {
+                            state.focused_pane = PaneType::Waterfall;
+                        }
+                        KeyCode::F(3) => {
+                            state.focused_pane = PaneType::ChannelGrid;
+                        }
+                        KeyCode::F(4) => {
+                            state.focused_pane = PaneType::Activity;
+                        }
+                        KeyCode::F(5) => {
+                            state.focused_pane = PaneType::Transcripts;
+                        }
                         KeyCode::Tab => {
                             // Cycle focus
                             state.focused_pane = match state.focused_pane {
@@ -936,9 +969,10 @@ async fn run_tui(
                                 && state.selected_dongle_idx > 0
                             {
                                 state.selected_dongle_idx -= 1;
-                                let selected_id =
-                                    state.dongles[state.selected_dongle_idx].id.clone();
-                                *selected_dongle_id.lock().await = Some(selected_id);
+                                let d = &state.dongles[state.selected_dongle_idx];
+                                *selected_dongle_id.lock().await = Some(d.id.clone());
+                                state.center_hz = d.freq_hz as f64;
+                                state.tuned_hz = d.freq_hz as f64;
                             }
                         }
                         KeyCode::Down => {
@@ -946,9 +980,10 @@ async fn run_tui(
                                 && state.selected_dongle_idx + 1 < state.dongles.len()
                             {
                                 state.selected_dongle_idx += 1;
-                                let selected_id =
-                                    state.dongles[state.selected_dongle_idx].id.clone();
-                                *selected_dongle_id.lock().await = Some(selected_id);
+                                let d = &state.dongles[state.selected_dongle_idx];
+                                *selected_dongle_id.lock().await = Some(d.id.clone());
+                                state.center_hz = d.freq_hz as f64;
+                                state.tuned_hz = d.freq_hz as f64;
                             }
                         }
                         // Waterfall navigation (Arrow keys)
@@ -1042,7 +1077,11 @@ async fn run_tui(
                             state.selected_dongle_idx = 0;
                         }
                         if let Some(d) = state.active_dongle() {
-                            *selected_dongle_id.lock().await = Some(d.id.clone());
+                            let freq = d.freq_hz;
+                            let id = d.id.clone();
+                            *selected_dongle_id.lock().await = Some(id);
+                            state.center_hz = freq as f64;
+                            state.tuned_hz = freq as f64;
                         }
                     }
                     WsServerMsg::Event(ev) => match ev {
@@ -1475,10 +1514,17 @@ async fn run_tui(
                 } else {
                     Span::styled("● REC", Style::default().fg(Color::DarkGray))
                 };
-                let listen_span = Span::styled(
-                    format!("♪ LISTEN {}", listen_ch),
-                    Style::default().fg(Color::Cyan),
-                );
+                let listen_span = if state.audio_available {
+                    Span::styled(
+                        format!("♪ LISTEN {}", listen_ch),
+                        Style::default().fg(Color::Cyan),
+                    )
+                } else {
+                    Span::styled(
+                        "♪ audio: unavailable",
+                        Style::default().fg(Color::DarkGray),
+                    )
+                };
                 let sql_span = Span::raw(format!("SQL {:.1}dB", sql_db));
                 let tx_span = if state.tx_enabled {
                     Span::styled("TX:ready", Style::default().fg(Color::LightGreen))
@@ -1521,7 +1567,73 @@ async fn run_tui(
                 f.render_widget(bar_paragraph, root_layout[1]);
 
                 // Render Dialogs
-                if let Some(ref text) = state.tune_dialog {
+                if state.help_dialog {
+                    let area = centered_rect(70, 70, f.area());
+                    f.render_widget(Clear, area);
+                    let block = Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Hertz Operator Console Help ");
+                    let p = Paragraph::new(vec![
+                        Line::from(vec![
+                            Span::styled("Tab       ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Cycle pane focus"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("F1 - F5   ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Direct pane focus (Dongles, Waterfall, Grid, Activity, Transcripts)"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("t         ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Manual Tune frequency or channel entry dialog"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("s         ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Set Squelch threshold dialog"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("r         ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Toggle Recording on the selected dongle"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("x         ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Compose voice transmission (TX Console)"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Space     ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Toggle VFO audio listening / Pause waterfall"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("q         ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Quit Hertz console"),
+                        ]),
+                        Line::from(""),
+                        Line::from(Span::styled("Waterfall Focused controls:", Style::default().add_modifier(Modifier::UNDERLINED))),
+                        Line::from(vec![
+                            Span::styled("  ← / →   ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Tune frequency down / up by step"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("  Sh+← / →", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Coarse tune frequency down / up"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("  [ / ]   ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Lower / raise dB noise floor mapping"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("  { / }   ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Lower / raise dB ceiling mapping"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("  c       ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                            Span::raw(" Cycle Colormap (viridis -> inferno -> turbo -> mono)"),
+                        ]),
+                        Line::from(""),
+                        Line::from("Press Esc or '?' to close this help screen."),
+                    ])
+                    .block(block);
+                    f.render_widget(p, area);
+                } else if let Some(ref text) = state.tune_dialog {
                     let area = centered_rect(60, 20, f.area());
                     f.render_widget(Clear, area);
                     let block = Block::default()
@@ -1732,4 +1844,66 @@ fn draw_ruler(f: &mut ratatui::Frame, area: Rect, center_hz: f64, span_hz: f64, 
 
     f.render_widget(Paragraph::new(ticks_line), layout[0]);
     f.render_widget(Paragraph::new(labels_line), layout[1]);
+}
+
+#[cfg(unix)]
+fn redirect_stderr_to_null() {
+    use std::fs::OpenOptions;
+    use std::os::fd::AsRawFd;
+    if let Ok(null_file) = OpenOptions::new().write(true).open("/dev/null") {
+        let null_fd = null_file.as_raw_fd();
+        unsafe {
+            libc::dup2(null_fd, libc::STDERR_FILENO);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn redirect_stderr_to_null() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_help_dialog_toggle() {
+        let cfg = Config::default();
+        let mut state = AppState::new(&cfg);
+        assert!(!state.help_dialog);
+        state.help_dialog = true;
+        assert!(state.help_dialog);
+    }
+
+    #[test]
+    fn test_ruler_seeding_from_hello() {
+        let cfg = Config::default();
+        let mut state = AppState::new(&cfg);
+        assert_eq!(state.center_hz, 150_000_000.0);
+
+        let mock_dongle = hertz_types::wire::DongleSummary {
+            id: "TEST01".to_string(),
+            serial: "SER01".to_string(),
+            role: hertz_types::DongleRole::Monitor,
+            online: true,
+            bandplan: None,
+            tap_channel: None,
+            groups: vec![],
+            freq_hz: 462_562_500,
+            squelch_db: 10.0,
+            recording: false,
+            listening: true,
+            message: None,
+        };
+
+        state.dongles = vec![mock_dongle];
+        state.selected_dongle_idx = 0;
+        if let Some(d) = state.active_dongle() {
+            let freq = d.freq_hz;
+            state.center_hz = freq as f64;
+            state.tuned_hz = freq as f64;
+        }
+
+        assert_eq!(state.center_hz, 462_562_500.0);
+        assert_eq!(state.tuned_hz, 462_562_500.0);
+    }
 }

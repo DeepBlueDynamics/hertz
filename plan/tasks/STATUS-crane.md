@@ -30,11 +30,13 @@
 - Cleaned up ALSA build requirements (installed `libasound2-dev` package inside the docker sandbox container).
 - Ran all cargo tests and verified clean clippy (`cargo clippy --all-targets`) and clean formatting (`cargo fmt --check`).
 
-### In Progress
-- None.
-
-### Blocked
-- None.
+### Bug Fixes
+- **Bug #1 (? Help Keymap & F-Keys)**: Implemented full modal keyboard bindings help overlay on `?`. Pressed `Esc` or `?` closes it. Added direct pane focus hotkeys `F1`-`F5` mapping to panes (Dongles, Waterfall, Grid, Activity, Transcripts) as per spec. Added unit tests for help dialog toggle.
+- **Bug #2 (Ruler Scope Initial Seeding)**: Seeded TUI scope `center_hz` and `tuned_hz` dynamically upon receiving WS `Hello` message containing the active dongle's actual current `freq_hz`, and whenever the active dongle is switched via arrow keys, ensuring correct initial ruler values. Added unit tests verifying Hello message seeding logic.
+- **Bug #3 (Graceful Audio Failure & Stderr Pollution Prevention)**:
+  - Gracefully catch CPAL/ALSA host/device/stream errors so the client does not crash, displaying `♪ audio: unavailable` in status bar instead of falling back to default/empty audio device playback.
+  - Suppressed ALSA driver warnings by redirecting stderr (fd 2) to `/dev/null` on Unix platforms upon starting the TUI.
+  - Moved audio initialization before raw mode and alternate screen entry to prevent probe outputs from corrupting display.
 
 ### Verification
 - `cargo test -p hertz-tui` passes 100% cleanly.
