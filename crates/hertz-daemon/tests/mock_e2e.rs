@@ -173,3 +173,193 @@ async fn mock_sdr_end_to_end_lifecycle_over_ws() {
     daemon.shutdown();
     daemon.join().await;
 }
+
+/// T4.1: spectrum (waterfall) frames are opt-in. A client that requests
+/// `?spectrum=all` receives decodable spectrum binary frames; a client that only
+/// requests `?audio=all` receives audio but never a spectrum frame (the server
+/// filters spectrum to the default `none`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn spectrum_frames_arrive_only_when_requested() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("warn,hertz_daemon=info"))
+        .try_init();
+
+    let tmp = tempfile::tempdir().expect("tmp");
+    let pairs = Arc::new(build_mock_iq_pairs());
+    let pairs_for_closure = Arc::clone(&pairs);
+    let factory = MockFactory::from_closure(move |idx: u64| -> (u8, u8) {
+        pairs_for_closure[(idx as usize) % pairs_for_closure.len()]
+    });
+
+    let listen = free_port();
+    let config = DaemonConfig {
+        daemon: DaemonSettings {
+            listen: listen.clone(),
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            auth_token: None,
+        },
+        dongles: vec![DongleConfig {
+            serial: "MOCKSPEC".into(),
+            role: DongleRole::Monitor,
+            bandplan: None,
+            tap_channel: None,
+            groups: None,
+            dwell_ms: Some(150),
+            priority: None,
+            squelch_db: 6.0,
+            record: false,
+            frequency_hz: Some(156_800_000),
+        }],
+        transcription: None,
+        tx: None,
+    };
+
+    let daemon = Daemon::start(config, Arc::new(factory), ChannelDb::new())
+        .await
+        .expect("daemon start");
+
+    // Prime the worker + DSP thread.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    use futures::StreamExt;
+    use hertz_types::wire::{decode_spectrum_frame, SPECTRUM_FRAME_MAGIC};
+    use tokio_tungstenite::tungstenite::Message;
+
+    // --- Connection A: requests spectrum. Must receive decodable spectrum frames.
+    let listen_a = listen.clone();
+    let collect_spectrum = tokio::spawn(async move {
+        let url = format!("ws://{listen_a}/stream?spectrum=all");
+        let mut ws = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio_tungstenite::connect_async(&url).await
+        })
+        .await
+        .expect("ws A connect timeout")
+        .expect("ws A connect")
+        .0;
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        let mut spectrum_count = 0usize;
+        let mut non_spectrum_binary = 0usize;
+        loop {
+            match tokio::time::timeout_at(deadline, ws.next()).await {
+                Err(_) => break,
+                Ok(None) => break,
+                Ok(Some(Err(e))) => panic!("ws A error: {e}"),
+                Ok(Some(Ok(msg))) => match msg {
+                    Message::Binary(b) => {
+                        let bytes: &[u8] = b.as_ref();
+                        if !bytes.is_empty() && bytes[0] == SPECTRUM_FRAME_MAGIC {
+                            let dec = decode_spectrum_frame(bytes).expect("spectrum decode");
+                            assert!(
+                                !dec.bins_db.is_empty(),
+                                "spectrum frame carried no bins (n={})",
+                                dec.bins_db.len()
+                            );
+                            assert_eq!(dec.dongle_idx, 0);
+                            assert!(
+                                (dec.center_hz - 156_800_000.0).abs() < 1e-6,
+                                "center_hz {}",
+                                dec.center_hz
+                            );
+                            assert!(
+                                (dec.span_hz - 240_000.0).abs() < 1.0,
+                                "span_hz {}",
+                                dec.span_hz
+                            );
+                            spectrum_count += 1;
+                            if spectrum_count >= 3 {
+                                break;
+                            }
+                        } else {
+                            non_spectrum_binary += 1;
+                        }
+                    }
+                    Message::Text(_) => {} // Hello / events are fine
+                    Message::Close(_) => break,
+                    _ => {}
+                },
+            }
+        }
+        let _ = ws.close(None).await;
+        (spectrum_count, non_spectrum_binary)
+    });
+
+    // --- Connection B: requests audio only. Must get audio, never spectrum.
+    let listen_b = listen;
+    let collect_audio = tokio::spawn(async move {
+        let url = format!("ws://{listen_b}/stream?audio=all");
+        let mut ws = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio_tungstenite::connect_async(&url).await
+        })
+        .await
+        .expect("ws B connect timeout")
+        .expect("ws B connect")
+        .0;
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        let mut audio_frames = 0usize;
+        let mut spectrum_leak = 0usize;
+        let mut first_audio_at: Option<tokio::time::Instant> = None;
+        loop {
+            match tokio::time::timeout_at(deadline, ws.next()).await {
+                Err(_) => break,
+                Ok(None) => break,
+                Ok(Some(Err(e))) => panic!("ws B error: {e}"),
+                Ok(Some(Ok(msg))) => match msg {
+                    Message::Binary(b) => {
+                        let bytes: &[u8] = b.as_ref();
+                        if !bytes.is_empty() && bytes[0] == SPECTRUM_FRAME_MAGIC {
+                            spectrum_leak += 1;
+                        } else {
+                            audio_frames += 1;
+                            if first_audio_at.is_none() {
+                                first_audio_at = Some(tokio::time::Instant::now());
+                            }
+                        }
+                    }
+                    Message::Text(_) => {}
+                    Message::Close(_) => break,
+                    _ => {}
+                },
+            }
+            // Once we've seen audio, keep draining ~1s to surface any spectrum
+            // leak while the DSP is actively publishing, then stop.
+            if let Some(t0) = first_audio_at {
+                if t0.elapsed() >= Duration::from_secs(1) {
+                    break;
+                }
+            }
+        }
+        let _ = ws.close(None).await;
+        (audio_frames, spectrum_leak)
+    });
+
+    let (a_res, b_res) = tokio::time::timeout(Duration::from_secs(40), async {
+        tokio::join!(collect_spectrum, collect_audio)
+    })
+    .await
+    .expect("overall test timeout");
+
+    let (spectrum_count, non_spectrum_binary) = a_res.expect("A join");
+    let (audio_frames, spectrum_leak) = b_res.expect("B join");
+
+    assert!(
+        spectrum_count >= 3,
+        "expected ≥3 spectrum frames on ?spectrum=all, got {spectrum_count}"
+    );
+    assert_eq!(
+        non_spectrum_binary, 0,
+        "spectrum stream received a non-spectrum binary frame"
+    );
+    assert!(
+        audio_frames >= 1,
+        "audio-only stream received no audio frames"
+    );
+    assert_eq!(
+        spectrum_leak, 0,
+        "audio-only stream leaked a spectrum frame (filter not applied)"
+    );
+
+    daemon.shutdown();
+    daemon.join().await;
+}

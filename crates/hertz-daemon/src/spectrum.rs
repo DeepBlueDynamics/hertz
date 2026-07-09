@@ -59,7 +59,6 @@ pub struct SpectrumEmitter {
     last_emit: Option<Instant>,
     // Cached FFT plan: planning is the expensive part, so reuse it across frames.
     fft: std::sync::Arc<dyn Fft<f32>>,
-    scratch: Vec<Complex32>,
 }
 
 impl SpectrumEmitter {
@@ -75,14 +74,13 @@ impl SpectrumEmitter {
     /// powers of two are the intended use).
     pub fn with_size(fft_size: usize) -> Self {
         let fft_size = fft_size.max(1);
-        let planner = FftPlanner::new();
+        let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(fft_size);
         Self {
             fft_size,
             min_interval: Duration::from_secs_f64(1.0 / Self::MAX_FPS as f64),
             last_emit: None,
             fft,
-            scratch: Vec::with_capacity(fft_size),
         }
     }
 
@@ -103,7 +101,7 @@ impl SpectrumEmitter {
             }
         }
         self.last_emit = Some(now);
-        Some(compute_spectrum_db(iq, self.fft_size, &self.fft, &mut self.scratch))
+        Some(compute_spectrum_db(iq, self.fft_size, &self.fft))
     }
 }
 
@@ -120,26 +118,28 @@ pub fn compute_spectrum_db(
     iq: &[Complex32],
     fft_size: usize,
     fft: &std::sync::Arc<dyn Fft<f32>>,
-    scratch: &mut Vec<Complex32>,
 ) -> Vec<f32> {
     let n = fft_size.min(iq.len());
     if n == 0 {
         return Vec::new();
     }
     let mut buf: Vec<Complex32> = iq[..n].to_vec();
-    // If the IQ window is smaller than the planned FFT we fall back to a
-    // same-size plan; otherwise reuse the cached one.
+    // Reuse the cached plan at full size; a short window falls back to an ad-hoc
+    // same-size plan. `process` allocates a scratch internally — fine at ≤20 fps.
     if n == fft_size {
-        fft.process_with_scratch(&mut buf, scratch);
+        fft.process(&mut buf);
     } else {
-        let planner = FftPlanner::new();
+        let mut planner = FftPlanner::new();
         let ad_hoc = planner.plan_fft_forward(n);
         ad_hoc.process(&mut buf);
     }
 
     // dB magnitude per bin, then fftshift so bin 0 = lowest frequency.
-    let mut db: Vec<f32> = buf.iter().map(|c| 10.0 * (c.norm_sqr() + 1e-12).log10()).collect();
-    db.rotate(n / 2);
+    let mut db: Vec<f32> = buf
+        .iter()
+        .map(|c| 10.0 * (c.norm_sqr() + 1e-12).log10())
+        .collect();
+    db.rotate_left(n / 2);
     db
 }
 
@@ -158,38 +158,39 @@ mod tests {
 
     #[test]
     fn spectrum_of_pure_tone_peaks_away_from_center() {
-        // A real sinusoid at +bin offset should produce a clear peak. Use a
+        // A complex sinusoid at +tone_hz should produce a clear peak. Use a
         // large window so the tone lands in a resolvable bin.
         let n = 1024usize;
         let rate = 1_000_000_f64;
-        let tone_hz = 100_000.0; // +10% of Nyquist → bin ~ round(100_000/ (rate/n))
-        let k = (tone_hz / (rate / n as f64)).round() as usize;
+        let tone_hz = 100_000.0; // +10% of Nyquist
+        let bin_width = rate / n as f64;
+        let k = (tone_hz / bin_width).round() as usize; // pre-shift bin
         let iq: Vec<Complex32> = (0..n)
             .map(|i| {
-                let t = i as f32 / n as f32;
-                let phase = 2.0 * std::f32::consts::PI * (tone_hz as f32) * t;
+                let phase =
+                    2.0 * std::f32::consts::PI * (tone_hz as f32 / rate as f32) * (i as f32);
                 Complex32::new(phase.cos(), phase.sin())
             })
             .collect();
-        let planner = FftPlanner::new();
+        let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(n);
-        let mut scratch = Vec::new();
-        let db = compute_spectrum_db(&iq, n, &fft, &mut scratch);
+        let db = compute_spectrum_db(&iq, n, &fft);
         assert_eq!(db.len(), n);
-        // The peak bin after fftshift corresponds to +tone_hz.
+        // After fftshift, a positive-frequency tone at pre-shift bin k maps to
+        // shifted index (k + n/2) % n.
+        let expected = (k + n / 2) % n;
         let peak = db
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(i, _)| i)
             .unwrap();
-        let lo = k.saturating_sub(3);
-        let hi = (k + 3).min(n - 1);
+        let lo = expected.saturating_sub(3);
+        let hi = (expected + 3).min(n - 1);
         assert!(
             (lo..=hi).contains(&peak),
-            "peak at bin {peak}, expected near {k} (±3) after fftshift"
+            "peak at bin {peak}, expected near {expected} (±3) after fftshift"
         );
-        let _ = rate;
     }
 
     #[test]

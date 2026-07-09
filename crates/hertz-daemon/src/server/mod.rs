@@ -397,6 +397,8 @@ pub struct StreamFilter {
     pub event_types: std::collections::HashSet<String>,
     /// Audio selector: None/none = no audio; Some(("all", ..)) = all; else (dongle, channel).
     pub audio: AudioSel,
+    /// Spectrum (waterfall) selector: None/none = no spectrum; All; or one dongle.
+    pub spectrum: SpectrumSel,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -407,6 +409,16 @@ pub enum AudioSel {
     One {
         dongle: String,
         channel: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum SpectrumSel {
+    #[default]
+    None,
+    All,
+    One {
+        dongle: String,
     },
 }
 
@@ -430,7 +442,18 @@ fn parse_filter(q: &WsQuery) -> StreamFilter {
             AudioSel::One { dongle, channel }
         }
     };
-    StreamFilter { event_types, audio }
+    let spectrum = match q.spectrum.as_deref().unwrap_or("none") {
+        "none" | "" => SpectrumSel::None,
+        "all" => SpectrumSel::All,
+        s => SpectrumSel::One {
+            dongle: s.to_string(),
+        },
+    };
+    StreamFilter {
+        event_types,
+        audio,
+        spectrum,
+    }
 }
 
 fn event_type_name(ev: &Event) -> &'static str {
@@ -463,6 +486,14 @@ pub fn audio_accepts(sel: &AudioSel, frame: &AudioFrame) -> bool {
     }
 }
 
+pub fn spectrum_accepts(sel: &SpectrumSel, frame: &SpectrumFrame) -> bool {
+    match sel {
+        SpectrumSel::None => false,
+        SpectrumSel::All => true,
+        SpectrumSel::One { dongle } => frame.dongle_id == *dongle,
+    }
+}
+
 async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQuery) {
     use axum::extract::ws::Message;
     use futures::SinkExt;
@@ -480,9 +511,10 @@ async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQ
 
     let mut ev_rx = state.bus.subscribe_events();
     let mut au_rx = state.bus.subscribe_audio();
+    let mut sp_rx = state.bus.subscribe_spectrum();
 
-    // Merge event + audio streams. Alternate with the client's incoming messages so
-    // we notice a closed socket (client disconnect) promptly.
+    // Merge event + audio + spectrum streams. Alternate with the client's
+    // incoming messages so we notice a closed socket (client disconnect) promptly.
     let mut client_closed = false;
     loop {
         tokio::select! {
@@ -509,6 +541,16 @@ async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQ
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => warn!("ws audio lagged {n}"),
+                Err(_) => break,
+            },
+            sp = sp_rx.recv() => match sp {
+                Ok(frame) => {
+                    if spectrum_accepts(&filter.spectrum, &frame) {
+                        let bytes = frame.encode();
+                        if sender.send(Message::Binary(bytes.into())).await.is_err() { break; }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => warn!("ws spectrum lagged {n}"),
                 Err(_) => break,
             },
             msg = receiver.next() => {
