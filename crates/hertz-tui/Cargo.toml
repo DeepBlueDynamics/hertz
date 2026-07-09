@@ -5,6 +5,22 @@ edition = "2021"
 
 [dependencies]
 hertz-types = { path = "../hertz-types" }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio-tungstenite = { workspace = true }
+cpal = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+crossbeam-channel = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+toml = { workspace = true }
+rtrb = { workspace = true }
+chrono = { workspace = true }
 
 [[bin]]
 name = "hertz"

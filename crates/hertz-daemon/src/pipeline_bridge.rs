@@ -30,6 +30,7 @@ use tracing::{debug, warn};
 use crate::audio::AudioFrame;
 use crate::control::{DongleControl, DongleControlSnapshot};
 use crate::recorder::{RecorderTx, TransmissionJob};
+use crate::spectrum::{SpectrumEmitter, SpectrumFrame};
 
 /// Monitor frame: 48 000 IQ pairs = 200 ms at 240 kS/s (one SDR read).
 const MONITOR_FRAME_BYTES: usize = 48_000 * 2;
@@ -57,6 +58,7 @@ pub struct DspThread {
     pub control: DongleControl,
     pub event_tx: mpsc::UnboundedSender<Event>,
     pub audio_tx: mpsc::UnboundedSender<AudioFrame>,
+    pub spectrum_tx: mpsc::UnboundedSender<SpectrumFrame>,
     pub recorder_tx: Option<RecorderTx>,
     pub shutdown: Arc<AtomicBool>,
     pub channels: Arc<ChannelDb>,
@@ -78,6 +80,9 @@ pub fn spawn_monitor_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             let mut freq = snap.freq_hz as u32;
             let mut last_freq_epoch = snap.freq_epoch;
             let mut last_squelch_epoch = snap.squelch_epoch;
+            // T4.1: rate-limited FFT spectrum for the live waterfall.
+            let mut spectrum = SpectrumEmitter::new();
+            let span_hz = SDR_RATE as f64;
 
             while !dsp.shutdown.load(Ordering::Relaxed) {
                 poll_worker_events(&dsp);
@@ -102,6 +107,17 @@ pub fn spawn_monitor_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     let iq = bytes_to_iq(&frame);
                     for pe in pipeline.process_buffer(&iq) {
                         dispatch_monitor_event(&dsp, &snap, freq, &pe);
+                    }
+                    // Publish a decimated FFT snapshot (≤20 fps) for the waterfall.
+                    if let Some(bins) = spectrum.maybe_emit(&iq) {
+                        let _ = dsp.spectrum_tx.send(SpectrumFrame {
+                            dongle_id: snap.dongle_id.clone(),
+                            dongle_idx: dsp.dongle_idx,
+                            center_hz: freq as f64,
+                            span_hz,
+                            squelch_open: pipeline.is_squelch_open(),
+                            bins_db: bins,
+                        });
                     }
                 }
                 if acc.len() < MONITOR_FRAME_BYTES {
@@ -264,6 +280,8 @@ pub fn spawn_channelized_loop(
             let mut slots: HashMap<String, ChannelSlot> = HashMap::new();
             let mut noise_floor_db: f32 = -60.0;
             let mut frame_count: u64 = 0;
+            // T4.1: rate-limited FFT spectrum for the live waterfall.
+            let mut spectrum = SpectrumEmitter::new();
 
             // Seed the tap slot so its audio streams continuously.
             if let Some(tc) = &tap_channel {
@@ -357,6 +375,20 @@ pub fn spawn_channelized_loop(
                         if slot.pipeline.is_squelch_open() {
                             slot.last_signal = Instant::now();
                         }
+                    }
+
+                    // T4.1: publish a decimated FFT snapshot of the wideband tap
+                    // (≤20 fps). squelch_open is an aggregate over active slots.
+                    if let Some(bins) = spectrum.maybe_emit(&wideband) {
+                        let any_open = slots.values().any(|s| s.pipeline.is_squelch_open());
+                        let _ = dsp.spectrum_tx.send(SpectrumFrame {
+                            dongle_id: snap.dongle_id.clone(),
+                            dongle_idx: dsp.dongle_idx,
+                            center_hz: center_hz as f64,
+                            span_hz: sample_rate_hz as f64,
+                            squelch_open: any_open,
+                            bins_db: bins,
+                        });
                     }
 
                     // Release silent non-tap slots.

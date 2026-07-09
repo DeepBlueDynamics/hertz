@@ -78,10 +78,12 @@ impl Daemon {
         let mut dsp_threads = Vec::new();
         let mut shutdown_flags = Vec::new();
 
-        // One (event,audio) sender-pair feeds the bus's two broadcast channels.
-        let (ev_tx, au_tx) = bus.clone().spawn_pumps();
+        // One (event,audio,spectrum) sender-triple feeds the bus's three broadcast
+        // channels.
+        let (ev_tx, au_tx, sp_tx) = bus.clone().spawn_pumps();
         let ev_tx = Arc::new(ev_tx);
         let au_tx = Arc::new(au_tx);
+        let sp_tx = Arc::new(sp_tx);
 
         // Recorder (one for all dongles). Bridges send transmission jobs to it.
         let recorder = RecorderHandle::spawn(
@@ -134,6 +136,7 @@ impl Daemon {
                 control: control.clone(),
                 event_tx: (*ev_tx).clone(),
                 audio_tx: (*au_tx).clone(),
+                spectrum_tx: (*sp_tx).clone(),
                 recorder_tx: Some(recorder_tx.clone()),
                 shutdown: shutdown.clone(),
                 channels: channels.clone(),

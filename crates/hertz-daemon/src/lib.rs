@@ -14,6 +14,7 @@ pub mod pipeline_bridge;
 pub mod recorder;
 pub mod runtime;
 pub mod server;
+pub mod spectrum;
 pub mod transcribe;
 
 pub use audio::AudioFrame;

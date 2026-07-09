@@ -139,14 +139,21 @@ pub fn detect_active_channels(
     let bin_width = sample_rate_hz as f32 / fft_size as f32;
     let channel_half_bins = (channel_half_width_hz / bin_width) as usize;
     let thresh = noise_floor_db + squelch_margin_db;
+    let nyquist = sample_rate_hz as f32 / 2.0;
 
     let mut active = Vec::new();
     for &(id, offset) in channels {
+        // A channel outside the capture span can never be detected here; probing it
+        // would index past the FFT (bandplans may list channels beyond this capture).
+        if offset.abs() + channel_half_width_hz >= nyquist {
+            continue;
+        }
         let bin_idx = if offset >= 0.0 {
             (offset / bin_width) as usize
         } else {
             fft_size - ((-offset) / bin_width) as usize
         };
+        let bin_idx = bin_idx.min(fft_size - 1);
         let start = bin_idx.saturating_sub(channel_half_bins);
         let end = (bin_idx + channel_half_bins).min(fft_size - 1);
         let mut power = 0.0f32;
@@ -209,5 +216,21 @@ mod tests {
         assert!((iq[1].im - (-1.0)).abs() < 1e-3);
         // [127,128] -> mid-range both axes ~0
         assert!(iq[2].re.abs() < 1e-2 && iq[2].im.abs() < 1e-2);
+    }
+
+    #[test]
+    fn out_of_span_probe_is_skipped_not_panicking() {
+        // Regression: marine-vhf-us includes NOAA WX channels ~5.7 MHz from the
+        // capture center — far outside a 2.4 MHz span. Probing one must be a no-op,
+        // not an out-of-range slice (panicked live at bin 19584 of 8192).
+        let wideband = vec![num_complex::Complex32::new(0.01, 0.0); 8192];
+        let probes = vec![
+            (16u32, 62_500.0f32),      // in-span
+            (9993u32, 5_737_500.0f32), // WX3: beyond Nyquist for 2.4 MS/s
+            (9994u32, -5_737_500.0f32),
+        ];
+        let active =
+            detect_active_channels(&wideband, 2_400_000, &probes, 12_500.0, -60.0, 12.0, 8192);
+        assert!(active.iter().all(|(id, _)| *id == 16));
     }
 }

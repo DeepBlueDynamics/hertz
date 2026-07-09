@@ -26,6 +26,7 @@ use tracing::{info, warn};
 
 use crate::audio::AudioFrame;
 use crate::runtime::DaemonState;
+use crate::spectrum::SpectrumFrame;
 
 /// Build the router and bind the listener. Returns the server task join handle and a
 /// oneshot sender whose drop/send triggers axum's graceful shutdown.
@@ -377,6 +378,8 @@ async fn get_doctor(State(state): State<DaemonState>) -> Json<DoctorReport> {
 struct WsQuery {
     events: Option<String>,
     audio: Option<String>,
+    /// Opt-in spectrum (waterfall) frames: `?spectrum=<dongle|all>` (default none).
+    spectrum: Option<String>,
 }
 
 async fn ws_handler(

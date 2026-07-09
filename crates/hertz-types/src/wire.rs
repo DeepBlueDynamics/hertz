@@ -211,13 +211,15 @@ pub struct DecodedAudioFrame {
     pub pcm: Vec<f32>,
 }
 
-/// Errors from [`decode_audio_frame`] / DTO validation.
+/// Errors from [`decode_audio_frame`] / [`decode_spectrum_frame`] / DTO validation.
 #[derive(Debug, Error)]
 pub enum WireError {
-    #[error("buffer too short for audio frame header ({len} < {need})")]
+    #[error("buffer too short for frame header ({len} < {need})")]
     ShortFrame { len: usize, need: usize },
-    #[error("audio frame PCM length is not a whole number of f32 ({rem} trailing bytes)")]
+    #[error("trailing payload is not a whole number of f32 ({rem} trailing bytes)")]
     TrailingBytes { rem: usize },
+    #[error("bad spectrum frame magic byte: got 0x{got:02X}, want 0x{want:02X}")]
+    BadMagic { got: u8, want: u8 },
     #[error("bad request: {0}")]
     BadRequest(String),
 }
@@ -257,6 +259,124 @@ pub fn decode_audio_frame(buf: &[u8]) -> Result<DecodedAudioFrame, WireError> {
         freq_hz,
         signal_db,
         pcm,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Binary spectrum frame (T4.1)
+// ---------------------------------------------------------------------------
+//
+// Layout (little-endian throughout):
+//   [u8 0x02 magic ][u8 dongle_idx][f64 center_hz][f64 span_hz]
+//   [u8 squelch_open][u16 n][f32 bins_db ...]
+//   off 0           off 1          off 2          off 10
+//   off 18          off 19         off 21
+//
+// The leading magic byte 0x02 distinguishes a spectrum frame from an audio
+// frame on the same WS connection: an audio frame's first byte is the dongle
+// index (0..N-1), never a typed tag. A client that subscribed to both streams
+// discriminates by `buf[0] == SPECTRUM_FRAME_MAGIC` (then validates the full
+// decode); anything else is an audio frame. Requesting `?spectrum=` is opt-in
+// (default off) so the ~40-80 KB/s stream only flows to clients that want it.
+
+/// Magic byte at offset 0 of a spectrum binary frame (audio frames have no tag —
+/// their first byte is the dongle index — so this byte is the discriminator).
+pub const SPECTRUM_FRAME_MAGIC: u8 = 0x02;
+pub const SPECTRUM_FRAME_HEADER_BYTES: usize = 21;
+pub const SPECTRUM_FRAME_MAGIC_OFFSET: usize = 0;
+pub const SPECTRUM_FRAME_DONGLE_OFFSET: usize = 1;
+pub const SPECTRUM_FRAME_CENTER_OFFSET: usize = 2;
+pub const SPECTRUM_FRAME_SPAN_OFFSET: usize = 10;
+pub const SPECTRUM_FRAME_SQUELCH_OFFSET: usize = 18;
+pub const SPECTRUM_FRAME_N_OFFSET: usize = 19;
+pub const SPECTRUM_FRAME_BINS_OFFSET: usize = 21;
+
+/// Encode one spectrum frame into a freshly-allocated byte buffer. `bins_db.len()`
+/// must fit in a `u16`; the caller is expected to keep FFT sizes modest (1024).
+#[track_caller]
+pub fn encode_spectrum_frame(
+    dongle_idx: u8,
+    center_hz: f64,
+    span_hz: f64,
+    squelch_open: bool,
+    bins_db: &[f32],
+) -> Vec<u8> {
+    assert!(
+        bins_db.len() <= u16::MAX as usize,
+        "spectrum bin count {} exceeds u16",
+        bins_db.len()
+    );
+    let mut out = Vec::with_capacity(SPECTRUM_FRAME_HEADER_BYTES + bins_db.len() * 4);
+    out.push(SPECTRUM_FRAME_MAGIC);
+    out.push(dongle_idx);
+    out.extend_from_slice(&center_hz.to_le_bytes());
+    out.extend_from_slice(&span_hz.to_le_bytes());
+    out.push(if squelch_open { 1 } else { 0 });
+    out.extend_from_slice(&(bins_db.len() as u16).to_le_bytes());
+    for &b in bins_db {
+        out.extend_from_slice(&b.to_le_bytes());
+    }
+    out
+}
+
+/// A decoded spectrum frame (owned).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DecodedSpectrumFrame {
+    pub dongle_idx: u8,
+    pub center_hz: f64,
+    pub span_hz: f64,
+    pub squelch_open: bool,
+    /// Magnitude per FFT bin in dB, fft-shifted so bin 0 = center - span/2.
+    pub bins_db: Vec<f32>,
+}
+
+/// Decode a spectrum frame. The buffer must be at least
+/// [`SPECTRUM_FRAME_HEADER_BYTES`] long, begin with [`SPECTRUM_FRAME_MAGIC`],
+/// and carry exactly the bin count declared in its header as a whole number of
+/// f32s.
+pub fn decode_spectrum_frame(buf: &[u8]) -> Result<DecodedSpectrumFrame, WireError> {
+    if buf.len() < SPECTRUM_FRAME_HEADER_BYTES {
+        return Err(WireError::ShortFrame {
+            len: buf.len(),
+            need: SPECTRUM_FRAME_HEADER_BYTES,
+        });
+    }
+    if buf[SPECTRUM_FRAME_MAGIC_OFFSET] != SPECTRUM_FRAME_MAGIC {
+        return Err(WireError::BadMagic {
+            got: buf[SPECTRUM_FRAME_MAGIC_OFFSET],
+            want: SPECTRUM_FRAME_MAGIC,
+        });
+    }
+    let dongle_idx = buf[SPECTRUM_FRAME_DONGLE_OFFSET];
+    let center_hz =
+        f64::from_le_bytes(buf[SPECTRUM_FRAME_CENTER_OFFSET..][..8].try_into().unwrap());
+    let span_hz = f64::from_le_bytes(buf[SPECTRUM_FRAME_SPAN_OFFSET..][..8].try_into().unwrap());
+    let squelch_open = buf[SPECTRUM_FRAME_SQUELCH_OFFSET] != 0;
+    let n = u16::from_le_bytes(buf[SPECTRUM_FRAME_N_OFFSET..][..2].try_into().unwrap()) as usize;
+
+    let bin_bytes = &buf[SPECTRUM_FRAME_BINS_OFFSET..];
+    if !bin_bytes.len().is_multiple_of(4) {
+        return Err(WireError::TrailingBytes {
+            rem: bin_bytes.len() % 4,
+        });
+    }
+    let declared = bin_bytes.len() / 4;
+    if declared != n {
+        return Err(WireError::BadRequest(format!(
+            "spectrum frame bin count mismatch: header n={n}, trailing={declared}"
+        )));
+    }
+    let bins_db: Vec<f32> = bin_bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+
+    Ok(DecodedSpectrumFrame {
+        dongle_idx,
+        center_hz,
+        span_hz,
+        squelch_open,
+        bins_db,
     })
 }
 
@@ -460,5 +580,75 @@ mod tests {
         }
         .validate()
         .is_err());
+    }
+
+    #[test]
+    fn spectrum_frame_round_trip() {
+        let bins = vec![-90.0, -80.5, -60.0, -40.25, -10.0, -120.0, 0.0, -3.5];
+        let bytes = encode_spectrum_frame(3, 156_800_000.0, 240_000.0, true, &bins);
+        assert_eq!(bytes[0], SPECTRUM_FRAME_MAGIC);
+        assert_eq!(bytes.len(), SPECTRUM_FRAME_HEADER_BYTES + bins.len() * 4);
+        let decoded = decode_spectrum_frame(&bytes).expect("decode");
+        assert_eq!(decoded.dongle_idx, 3);
+        assert!((decoded.center_hz - 156_800_000.0).abs() < 1e-9);
+        assert!((decoded.span_hz - 240_000.0).abs() < 1e-9);
+        assert!(decoded.squelch_open);
+        assert_eq!(decoded.bins_db.len(), bins.len());
+        for (a, b) in decoded.bins_db.iter().zip(&bins) {
+            assert!((a - b).abs() < 1e-6, "{a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn spectrum_frame_empty_bins_round_trip() {
+        // A squelch-closed frame with zero bins is still legal (header-only).
+        let bytes = encode_spectrum_frame(0, 0.0, 0.0, false, &[]);
+        assert_eq!(bytes.len(), SPECTRUM_FRAME_HEADER_BYTES);
+        let decoded = decode_spectrum_frame(&bytes).expect("decode");
+        assert!(!decoded.squelch_open);
+        assert!(decoded.bins_db.is_empty());
+    }
+
+    #[test]
+    fn spectrum_frame_rejects_short_badmagic_trailing_mismatch() {
+        // Header too short.
+        assert!(matches!(
+            decode_spectrum_frame(&[0u8; 5]),
+            Err(WireError::ShortFrame { .. })
+        ));
+
+        // Wrong magic byte (0x01, not 0x02) → looks like an audio frame.
+        let mut bad = encode_spectrum_frame(0, 0.0, 0.0, false, &[]);
+        bad[0] = 0x01;
+        assert!(matches!(
+            decode_spectrum_frame(&bad),
+            Err(WireError::BadMagic { .. })
+        ));
+
+        // Trailing bytes not a whole number of f32.
+        let mut trail = encode_spectrum_frame(0, 0.0, 0.0, false, &[]);
+        trail.extend_from_slice(&[1, 2]); // 2 stray bytes
+        assert!(matches!(
+            decode_spectrum_frame(&trail),
+            Err(WireError::TrailingBytes { .. })
+        ));
+
+        // Header bin count disagrees with the trailing payload.
+        let mut mm = encode_spectrum_frame(0, 0.0, 0.0, false, &[0.0]); // n=1
+        mm[SPECTRUM_FRAME_N_OFFSET..][..2].copy_from_slice(&2u16.to_le_bytes()); // claim n=2
+        assert!(matches!(
+            decode_spectrum_frame(&mm),
+            Err(WireError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn spectrum_magic_distinguishes_from_audio() {
+        // An audio frame for dongle idx 0 begins with 0x00; a spectrum frame
+        // always begins with 0x02. That leading byte is the on-wire discriminator.
+        let audio = encode_audio_frame(0, 1, 156_800_000, -9.0, &[0.0, 0.5]);
+        assert_ne!(audio[0], SPECTRUM_FRAME_MAGIC);
+        let spec = encode_spectrum_frame(0, 156_800_000.0, 240_000.0, false, &[-40.0]);
+        assert_eq!(spec[0], SPECTRUM_FRAME_MAGIC);
     }
 }
