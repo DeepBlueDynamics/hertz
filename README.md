@@ -1,5 +1,3 @@
-# hertz
-
 ![Hertz: radio in, words out. Multi-dongle RTL-SDR with on-device transcription.](docs/hertz-v0.1.0.jpg)
 
 A multi-dongle RTL-SDR radio receiver in Rust, tuned for marine VHF. `hertzd` owns
