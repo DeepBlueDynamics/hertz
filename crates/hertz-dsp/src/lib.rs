@@ -16,6 +16,7 @@ pub mod entropy;
 pub mod pipeline;
 pub mod recorder;
 pub mod testutil;
+pub mod voice_out;
 
 pub use demod::Mode;
 pub use pipeline::{AudioKind, Pipeline, PipelineConfig, PipelineEvent, TransmissionSummary};

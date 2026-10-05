@@ -32,10 +32,8 @@ pub const PREBUFFER_SECONDS: f32 = 1.5;
 
 /// Hang counter in frames (~2 s at 200 ms/frame).
 pub const SQUELCH_HANG_FRAMES: u64 = 10;
-/// Squared fade-in ramp length (~100 ms at 48 kHz).
-pub const FADE_IN_SAMPLES: usize = 4800;
-/// Max frames to wait for voice before passing audio.
-pub const VOICE_GATE_MAX_FRAMES: u64 = 3;
+/// Squared fade-in ramp length (20 ms at 48 kHz): de-clicks the onset without eating words.
+pub const FADE_IN_SAMPLES: usize = 960;
 
 /// Flatness EMA coefficient (gnosis 0.85/0.15).
 pub const FLATNESS_EMA_ALPHA: f32 = 0.85;
@@ -43,6 +41,11 @@ pub const FLATNESS_EMA_ALPHA: f32 = 0.85;
 pub const FLATNESS_OPEN: f32 = 0.55;
 /// "Definitely noise" when flatness rises above this.
 pub const FLATNESS_NOISE: f32 = 0.70;
+/// Flatness below which a frame counts as voice. Measured live on marine NFM:
+/// band noise never read below 0.77; speech read 0.60–0.81 (median 0.73).
+pub const FLATNESS_VOICE: f32 = 0.75;
+/// AM voice threshold (gnosis). A silent AM carrier reads below the NFM value.
+pub const FLATNESS_VOICE_AM: f32 = 0.45;
 
 /// AFC smoothing / threshold / max step (Hz). Carried from gnosis.
 pub const AFC_SMOOTHING: f32 = 0.85;
@@ -56,6 +59,15 @@ pub const DEFAULT_SQUELCH_MARGIN_SCAN_DB: f32 = 12.0;
 
 /// Seed noise floor for channelized pipelines (post channel-FIR).
 pub const SEED_NOISE_FLOOR_DB: f32 = -32.0;
+
+/// Frames (~200 ms each) averaged at startup to measure the real noise floor before
+/// the squelch may open (vhf_monitor calibration). The seed can sit well below the
+/// live floor, which would latch the power squelch open on plain noise.
+pub const NOISE_CAL_FRAMES: u64 = 5;
+/// Max per-frame drop of the noise-floor estimate (dB).
+pub const NOISE_FLOOR_MAX_DROP_DB: f32 = 0.5;
+/// Frames (~200 ms) open without voice before the floor is re-measured (~30 s).
+pub const STUCK_OPEN_FRAMES: u64 = 150;
 
 // ---- Events --------------------------------------------------------------
 
@@ -177,6 +189,12 @@ impl Pipeline {
         self.state.reset();
     }
 
+    /// Drop buffered pre-trigger audio. A scanner calls this before each dwell so a
+    /// squelch open never replays stale audio from an earlier visit.
+    pub fn clear_prebuffer(&mut self) {
+        self.state.prebuffer.clear();
+    }
+
     /// Whether the squelch is currently open.
     pub fn is_squelch_open(&self) -> bool {
         self.state.squelch_open
@@ -207,6 +225,7 @@ impl Pipeline {
 struct TransmissionState {
     mode: Mode,
     demod: DemodImpl,
+    voice_out: crate::voice_out::VoiceOut,
     signal_detector: SignalDetector,
     spectral_squelch: SpectralSquelch,
     click_suppressor: ClickSuppressor,
@@ -236,6 +255,8 @@ impl TransmissionState {
             Mode::Nfm => DemodImpl::Nfm(crate::demod::NfmDemod::new(config.input_sample_rate_hz)),
             Mode::Am => DemodImpl::Am(crate::demod::AmDemod::new(config.input_sample_rate_hz)),
         };
+        let voice_out =
+            crate::voice_out::VoiceOut::new(AUDIO_SAMPLE_RATE as f32, config.mode == Mode::Nfm);
         let prebuffer_capacity =
             ((AUDIO_SAMPLE_RATE as f32) * config.prebuffer_seconds).round() as usize;
         let prebuffer_capacity = prebuffer_capacity.max(1);
@@ -243,6 +264,7 @@ impl TransmissionState {
         Self {
             mode: config.mode,
             demod,
+            voice_out,
             signal_detector: SignalDetector::new(AUDIO_SAMPLE_RATE as f32),
             spectral_squelch: SpectralSquelch::new(),
             click_suppressor: ClickSuppressor::new(0.3),
@@ -278,6 +300,7 @@ impl TransmissionState {
             Mode::Nfm => DemodImpl::Nfm(crate::demod::NfmDemod::new(SDR_RATE)),
             Mode::Am => DemodImpl::Am(crate::demod::AmDemod::new(SDR_RATE)),
         };
+        self.voice_out.reset();
         self.freq_estimator.reset();
         self.afc_error_avg = 0.0;
         self.squelch_open = false;
@@ -312,6 +335,14 @@ impl TransmissionState {
             .spectral_flatness(&mags[lo_bin..hi_bin])
     }
 
+    fn voice_flatness(&self) -> f32 {
+        if self.mode == Mode::Am {
+            FLATNESS_VOICE_AM
+        } else {
+            FLATNESS_VOICE
+        }
+    }
+
     fn process(&mut self, iq: &[Complex32]) -> Vec<PipelineEvent> {
         let mut events = Vec::new();
         self.frame_count += 1;
@@ -326,22 +357,21 @@ impl TransmissionState {
             + (1.0 - FLATNESS_EMA_ALPHA) * audio_flatness;
         let flatness = self.audio_flatness_ema;
 
-        // AM-vs-NFM: a pure AM carrier demodulates to silence (flat envelope →
-        // DC-blocked away), so its demod-audio flatness reads ~1.0 ("noise-like")
-        // and a flatness-only squelch would never open on it. For AM we also treat
-        // strong carrier power (signal_db above threshold) as a signal; NFM stays
-        // flatness-only, exactly as gnosis (a pure NFM carrier is an edge case
-        // gnosis's non-viz path likewise left as Static).
-        let signal_present = if self.mode == Mode::Am {
-            flatness < FLATNESS_OPEN || signal_db > self.squelch_thresh
-        } else {
-            flatness < FLATNESS_OPEN
-        };
-        let is_noise = if self.mode == Mode::Am {
-            flatness > FLATNESS_NOISE && signal_db <= self.squelch_thresh
-        } else {
-            flatness > FLATNESS_NOISE
-        };
+        // Power OR entropy: in-channel power above noise+margin opens the squelch
+        // (the vhf_monitor power squelch that reliably catches live marine traffic),
+        // as does voice-like demod audio. A pure AM carrier demodulates to silence
+        // (flatness ~1.0) and a strong NFM carrier quiets the discriminator, so a
+        // flatness-only squelch can miss both. Noise needs both flat audio and
+        // sub-threshold power.
+        let calibrating = self.frame_count <= NOISE_CAL_FRAMES;
+        if calibrating {
+            let n = self.frame_count as f32;
+            self.noise_floor += (signal_db - self.noise_floor) / n;
+            self.squelch_thresh = self.noise_floor + self.squelch_margin;
+        }
+        let signal_present =
+            !calibrating && (flatness < FLATNESS_OPEN || signal_db > self.squelch_thresh);
+        let is_noise = flatness > FLATNESS_NOISE && signal_db <= self.squelch_thresh;
 
         // === Entropy harvest (LSBs of demod are random from ADC quantization). ===
         self.entropy.harvest(&audio);
@@ -349,7 +379,7 @@ impl TransmissionState {
         // === Classification (non-viz path). For AM the `signal_present` test above
         // already includes strong-carrier power, so a pure AM carrier (silent demod)
         // is classified Carrier here; NFM stays flatness-driven exactly as gnosis.
-        self.last_signal_class = if flatness < 0.45 {
+        self.last_signal_class = if flatness < self.voice_flatness() {
             SignalClassification::Voice
         } else if signal_present {
             SignalClassification::Carrier
@@ -358,15 +388,36 @@ impl TransmissionState {
         };
 
         // === Noise-floor adaptation ===
-        if is_noise {
-            let alpha = if self.squelch_open { 0.05 } else { 0.15 };
-            self.noise_floor = (1.0 - alpha) * self.noise_floor + alpha * signal_db;
-            self.squelch_thresh = self.noise_floor + self.squelch_margin;
+        // Only while closed: the unkey dip at the end of a transmission reads far
+        // below the true floor, and tracking it drags the threshold under the noise,
+        // latching the power squelch open. Downward moves are also rate-limited.
+        let target = if self.squelch_open {
+            None
+        } else if is_noise {
+            Some(0.15)
         } else if !signal_present && signal_db < self.squelch_thresh {
-            let alpha = 0.02;
-            self.noise_floor = (1.0 - alpha) * self.noise_floor + alpha * signal_db;
+            Some(0.02)
+        } else {
+            None
+        };
+        if let Some(alpha) = target {
+            let next = (1.0 - alpha) * self.noise_floor + alpha * signal_db;
+            self.noise_floor = next.max(self.noise_floor - NOISE_FLOOR_MAX_DROP_DB);
             self.squelch_thresh = self.noise_floor + self.squelch_margin;
         }
+        // Stuck-open recovery: open this long with no voice means the floor is
+        // wrong (or a dead carrier) — re-measure from the current level so the
+        // squelch can close.
+        if self.squelch_open
+            && !self.voice_detected_this_transmission
+            && self.frames_since_squelch_open >= STUCK_OPEN_FRAMES
+        {
+            self.noise_floor = signal_db;
+            self.squelch_thresh = self.noise_floor + self.squelch_margin;
+        }
+
+        // === Listening chain (after analysis): de-emphasis + LPF + fixed gain ===
+        self.voice_out.process(&mut audio);
 
         // === Squelch state machine ===
         if self.squelch_open {
@@ -391,13 +442,18 @@ impl TransmissionState {
                 if !signal_present && self.squelch_hang_counter < 7 {
                     self.recording_stopped = true;
                 }
-                if flatness < 0.45 {
+                if flatness < self.voice_flatness() {
                     self.recording_stopped = false;
                 }
             }
             if self.squelch_hang_counter == 0 {
                 // CLOSE.
-                let classification = self.last_signal_class;
+                // Classify the whole transmission, not the final (dropout) frame.
+                let classification = if self.voice_detected_this_transmission {
+                    SignalClassification::Voice
+                } else {
+                    SignalClassification::Carrier
+                };
                 let noise_floor = self.noise_floor;
                 events.push(PipelineEvent::SquelchClosed {
                     signal_db,
@@ -456,40 +512,28 @@ impl TransmissionState {
             }
         }
 
-        // === Output gating (voice gate + hang-tail fade) ===
-        let past_voice_gate = self.frames_since_squelch_open <= 1
-            || self.voice_detected_this_transmission
-            || self.frames_since_squelch_open > VOICE_GATE_MAX_FRAMES;
-        let in_hang_tail = self.voice_detected_this_transmission
-            && self.squelch_hang_counter < SQUELCH_HANG_FRAMES
-            && self.squelch_hang_counter > 0
-            && !signal_present
-            && self.squelch_hang_counter < 7;
-        let should_output = self.squelch_open && !is_noise && past_voice_gate && !in_hang_tail;
+        // === Output gating ===
+        // Play only frames where power or voice is present: hang frames after unkey
+        // are pure discriminator noise and played as a hiss burst. (Any present frame
+        // is power-confirmed or voice-flat, so no separate voice gate is needed.)
+        let should_output = self.squelch_open && signal_present;
 
         if should_output {
-            // Squared fade-in ramp on the first frames after open.
-            if self.frames_since_squelch_open <= 2 {
-                let base = if self.frames_since_squelch_open <= 1 {
-                    0
-                } else {
-                    audio.len()
-                };
-                for (i, s) in audio.iter_mut().enumerate() {
-                    let total_i = base + i;
-                    if total_i < FADE_IN_SAMPLES {
-                        let gain = total_i as f32 / FADE_IN_SAMPLES as f32;
-                        *s *= gain * gain;
+            // Squared fade-in on the opening frame, unless the faded-in prebuffer
+            // already leads into it (fading again would dip mid-word).
+            let prebuffer_played = events.iter().any(|e| {
+                matches!(
+                    e,
+                    PipelineEvent::Audio {
+                        kind: AudioKind::Prebuffer,
+                        ..
                     }
-                }
-            }
-            // Fade-out approaching close.
-            if self.squelch_hang_counter <= 3 && self.squelch_hang_counter > 0 {
-                let fade_factor = self.squelch_hang_counter as f32 / 3.0;
-                let audio_len = audio.len() as f32;
-                for (i, s) in audio.iter_mut().enumerate() {
-                    let ramp = fade_factor * (1.0 - i as f32 / audio_len.max(1.0));
-                    *s *= ramp.max(0.0);
+                )
+            });
+            if self.frames_since_squelch_open == 0 && !prebuffer_played {
+                for (i, s) in audio.iter_mut().take(FADE_IN_SAMPLES).enumerate() {
+                    let gain = i as f32 / FADE_IN_SAMPLES as f32;
+                    *s *= gain * gain;
                 }
             }
             if !self.recording_stopped {

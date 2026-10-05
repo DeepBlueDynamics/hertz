@@ -41,6 +41,7 @@ fn monitor_config(listen: String, data_dir: String, auth_token: Option<String>) 
             squelch_db: 6.0,
             record: false,
             frequency_hz: Some(156_800_000),
+            scan: None,
         }],
         transcription: None,
         tx: None,

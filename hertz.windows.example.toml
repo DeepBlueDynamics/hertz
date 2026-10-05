@@ -1,0 +1,25 @@
+# Native Windows config. Copy to data/hertz.windows.toml (data/ is gitignored) and
+# set your dongle's serial (find it with: cargo run --release -p hertz-sdr --example dump_fft).
+# Mirrors gnosis vhf_monitor: direct tune at 240 kS/s, 150 kHz IF, power+entropy squelch
+# 6 dB over noise, scanning the non-commercial channels 68, 69, 71 and 72.
+[daemon]
+listen = "127.0.0.1:9080"
+data_dir = "./data"
+
+[[dongle]]
+serial = "00000001"
+role = "monitor"
+bandplan = "marine-vhf-us"
+frequency_hz = 156625000
+scan = ["68", "69", "71", "72"]
+squelch_db = 6.0
+record = true
+
+# Cactus Whistle on-device speech recognition (forest/whistle). The engine and
+# ~17 MB weights download once to %LOCALAPPDATA%\whistle.
+# Transcripts land in data/transcriptions/<recording>.txt.
+[transcription]
+engine = "whistle"
+language = "en"
+# Bias recognition toward these (call signs, vessel names, prowords).
+keywords = ["Alpha India", "Alpha Tango", "Top Rabbit", "come in", "over", "channel sixteen"]

@@ -29,7 +29,11 @@ futures = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 rtrb = { workspace = true }
+cpal = { workspace = true }
 async-stream = "0.3"
+# Cactus Whistle on-device ASR (forest/whistle; engine + 17 MB weights fetched on first use).
+whistle = { path = "../../../forest/whistle" }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

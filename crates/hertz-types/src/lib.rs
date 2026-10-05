@@ -241,6 +241,9 @@ pub struct DongleConfig {
     pub squelch_db: f32,
     pub record: bool,
     pub frequency_hz: Option<u64>,
+    /// Monitor role: channel ids to scan (vhf_monitor-style hop, lock on activity).
+    #[serde(default)]
+    pub scan: Option<Vec<String>>,
 }
 
 fn default_dwell_ms() -> Option<u64> {
@@ -277,12 +280,6 @@ impl DaemonSettings {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WhisperHttpConfig {
-    pub url: String,
-    pub model: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CleanupConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -292,21 +289,18 @@ pub struct CleanupConfig {
 pub struct TranscriptionConfig {
     #[serde(default = "default_engine")]
     pub engine: String,
-    #[serde(default = "default_model")]
-    pub model: String,
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default)]
     pub translate_to: String,
-    pub whisper_http: Option<WhisperHttpConfig>,
+    /// Words to bias recognition toward: call signs, vessel names, channel names.
+    #[serde(default)]
+    pub keywords: Vec<String>,
     pub cleanup: Option<CleanupConfig>,
 }
 
 fn default_engine() -> String {
-    "whisper-internal".to_string()
-}
-fn default_model() -> String {
-    "small".to_string()
+    "whistle".to_string()
 }
 fn default_language() -> String {
     "auto".to_string()

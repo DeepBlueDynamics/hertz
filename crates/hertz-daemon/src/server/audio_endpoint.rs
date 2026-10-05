@@ -8,9 +8,7 @@ use axum::body::Body;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
-use futures::StreamExt;
 
-use crate::audio::AudioFrame;
 use crate::runtime::DaemonState;
 use crate::server::{audio_accepts, check_auth, AudioSel};
 

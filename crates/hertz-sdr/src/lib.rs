@@ -416,12 +416,22 @@ impl SdrWorker {
             let mut current_gain = config.gain;
             let current_bandwidth = config.bandwidth;
 
-            // Set initial parameters
-            let _ = device.set_sample_rate(current_sample_rate);
-            let _ = device.set_center_freq(current_freq);
-            let _ = device.set_gain(current_gain);
-            let _ = device.set_bandwidth(current_bandwidth);
-            let _ = device.reset_buffer();
+            // Set initial parameters. Failures are logged, not fatal: a dongle that
+            // rejects one setting can still stream, but silently ignoring it hid
+            // mis-tuning and gain problems.
+            let warn_err = |what: &str, r: Result<()>| {
+                if let Err(e) = r {
+                    log::warn!("sdr init: {what} failed: {e}");
+                }
+            };
+            warn_err(
+                "set_sample_rate",
+                device.set_sample_rate(current_sample_rate),
+            );
+            warn_err("set_center_freq", device.set_center_freq(current_freq));
+            warn_err("set_gain", device.set_gain(current_gain));
+            warn_err("set_bandwidth", device.set_bandwidth(current_bandwidth));
+            warn_err("reset_buffer", device.reset_buffer());
 
             let buffer_size = config.buffer_size_iq_pairs * 2;
             let mut read_buf = vec![0u8; buffer_size];

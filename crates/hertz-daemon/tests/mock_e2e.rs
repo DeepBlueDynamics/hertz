@@ -10,6 +10,7 @@ use std::time::Duration;
 use hertz_channels::ChannelDb;
 use hertz_daemon::{Daemon, MockFactory};
 use hertz_dsp::testutil::{fm_multitone_signal, white_noise};
+use hertz_sdr::{MockSdr, SdrDevice, SdrError};
 use hertz_types::wire::WsServerMsg;
 use hertz_types::{DaemonConfig, DaemonSettings, DongleConfig, DongleRole};
 use num_complex::Complex32;
@@ -76,6 +77,7 @@ async fn mock_sdr_end_to_end_lifecycle_over_ws() {
             squelch_db: 6.0,
             record: true,
             frequency_hz: Some(156_800_000),
+            scan: None,
         }],
         transcription: None,
         tx: None,
@@ -209,6 +211,7 @@ async fn spectrum_frames_arrive_only_when_requested() {
             squelch_db: 6.0,
             record: false,
             frequency_hz: Some(156_800_000),
+            scan: None,
         }],
         transcription: None,
         tx: None,
@@ -358,6 +361,155 @@ async fn spectrum_frames_arrive_only_when_requested() {
     assert_eq!(
         spectrum_leak, 0,
         "audio-only stream leaked a spectrum frame (filter not applied)"
+    );
+
+    daemon.shutdown();
+    daemon.join().await;
+}
+
+/// Minimal blocking HTTP/1.0 GET used to read `/api/status` as JSON. (kept simple
+/// and dependency-free; tokio-tungstenite only speaks WebSocket).
+async fn get_status_json(listen: &str) -> serde_json::Value {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut s = tokio::net::TcpStream::connect(listen)
+        .await
+        .expect("http connect");
+    s.write_all(b"GET /api/status HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        .await
+        .expect("http write");
+    let mut buf = Vec::new();
+    s.read_to_end(&mut buf).await.expect("http read");
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let body = text.split("\r\n\r\n").nth(1).unwrap_or(&text);
+    serde_json::from_str(body).expect("status json")
+}
+
+/// Startup open failure → offline, then reconnect-by-serial retry brings the dongle
+/// fully online and its DSP thread runs. The first factory open returns NotFound
+/// (device not enumerated yet); later opens succeed. Mirrors the live failure mode:
+/// usbipd attach dropped at boot, dongle enumerates later.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dongle_reconnects_after_startup_open_failure() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("warn,hertz_daemon=info"))
+        .try_init();
+
+    let tmp = tempfile::tempdir().expect("tmp");
+    let pairs = Arc::new(build_mock_iq_pairs());
+    let factory = MockFactory::from_fallible_closure(
+        move |attempt| -> Result<Box<dyn SdrDevice>, SdrError> {
+            // Attempt 0 (the startup open) fails: the dongle isn't there yet.
+            if attempt == 0 {
+                return Err(SdrError::NotFound("dongle not enumerated yet".into()));
+            }
+            // Later attempts succeed with a fresh voice-burst mock device.
+            let p = Arc::clone(&pairs);
+            Ok(Box::new(MockSdr::new_with_closure(move |i| {
+                let len = p.len();
+                p[(i as usize) % len]
+            })))
+        },
+    );
+
+    let listen = free_port();
+    let config = DaemonConfig {
+        daemon: DaemonSettings {
+            listen: listen.clone(),
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            auth_token: None,
+        },
+        dongles: vec![DongleConfig {
+            serial: "MOCKRECONN".into(),
+            role: DongleRole::Monitor,
+            bandplan: None,
+            tap_channel: None,
+            groups: None,
+            dwell_ms: Some(150),
+            priority: None,
+            squelch_db: 6.0,
+            record: false,
+            frequency_hz: Some(156_800_000),
+            scan: None,
+        }],
+        transcription: None,
+        tx: None,
+    };
+
+    // 200 ms retry interval so the test exercises the loop quickly (production
+    // default is 5 s — see Daemon::start).
+    let daemon = Daemon::start_with_reconnect_interval(
+        config,
+        Arc::new(factory),
+        ChannelDb::new(),
+        Duration::from_millis(200),
+    )
+    .await
+    .expect("daemon start");
+
+    // 1. The dongle is offline immediately after the startup open failed.
+    let st = get_status_json(&listen).await;
+    assert_eq!(
+        st["dongles"][0]["online"].as_bool(),
+        Some(false),
+        "dongle should be offline after startup open failure"
+    );
+
+    // 2. Open the WS and wait for the offline→online transition + audio (proves the
+    //    reconnect retry reopened the device, marked it online, and launched its DSP
+    //    thread).
+    let url = format!("ws://{listen}/stream?audio=all");
+    let mut ws = tokio::time::timeout(Duration::from_secs(3), async {
+        tokio_tungstenite::connect_async(&url).await
+    })
+    .await
+    .expect("ws connect timeout")
+    .expect("ws connect")
+    .0;
+
+    use futures::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut saw_online = false;
+    let mut saw_audio = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        match tokio::time::timeout_at(deadline, ws.next()).await {
+            Err(_) => break,
+            Ok(None) => break,
+            Ok(Some(Err(e))) => panic!("ws error: {e}"),
+            Ok(Some(Ok(msg))) => match msg {
+                Message::Text(t) => {
+                    if let Ok(WsServerMsg::Event(hertz_types::Event::DongleStatus {
+                        online: true,
+                        ..
+                    })) = serde_json::from_str(&t)
+                    {
+                        saw_online = true;
+                    }
+                }
+                Message::Binary(_) => saw_audio = true,
+                Message::Close(_) => break,
+                _ => {}
+            },
+        }
+        if saw_online && saw_audio {
+            break;
+        }
+    }
+    let _ = ws.close(None).await;
+
+    assert!(
+        saw_online,
+        "never saw DongleStatus(online=true): reconnect did not bring the dongle online"
+    );
+    assert!(saw_audio, "DSP thread never produced audio after reconnect");
+
+    // 3. /api/status now reflects online.
+    let st2 = get_status_json(&listen).await;
+    assert_eq!(
+        st2["dongles"][0]["online"].as_bool(),
+        Some(true),
+        "dongle should be online after reconnect"
     );
 
     daemon.shutdown();

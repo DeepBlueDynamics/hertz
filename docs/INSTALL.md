@@ -44,6 +44,11 @@ To allow the container's non-root user (`hertz`) to access the USB dongles:
    sudo udevadm control --reload && sudo udevadm trigger
    ```
 
+> [!WARNING]
+> The image does not build at the moment. `hertz-daemon` depends on the `whistle`
+> crate by path (`../forest/whistle`), which is outside the Docker build context.
+> Vendor whistle into this repo (or publish it) before building the container.
+
 ### Step 3: Run the Container Stack
 1. Connect your RTL-SDR dongles to a **powered USB hub** (dongles draw significant current and can brown-out host controllers).
 2. Start the container stack:
@@ -90,13 +95,28 @@ Docker Desktop on Windows does not support direct USB passthrough. To deploy Her
 2. Apply the Linux udev rules and blacklist instructions described in the **Linux Host** section.
 3. Start the Docker containers inside WSL2.
 
-### Native Windows Fallback (Non-Containerized)
-For local development, you can run the Hertz binaries directly on Windows:
+### Native Windows (Non-Containerized)
+This is how Hertz runs day to day on the development box, and the only Windows path
+with local speaker output.
+
 1. Download [Zadig](https://zadig.akeo.ie/).
 2. Select **Options -> List All Devices**.
 3. Choose **Bulk-In, Interface (Interface 0)**.
-4. Select **WinUSB** as the driver and click **Replace Driver**.
-5. Run the daemon via `cargo run --package hertz-daemon`.
+4. Select **WinUSB** as the driver and click **Replace Driver**. (If another
+   librtlsdr tool such as `rtl_fm` already works, this is done.)
+5. Find the dongle's serial:
+   ```powershell
+   cargo run --release -p hertz-sdr --example dump_fft
+   ```
+   It prints `Index 0: Serial=00000001, Product=RTL2838UHIDIR` and a live spectrum.
+6. Copy `hertz.windows.example.toml` to `data\hertz.windows.toml`, set your serial, and run:
+   ```powershell
+   cargo build --release -p hertz-daemon
+   .\target\release\hertzd.exe data\hertz.windows.toml --listen
+   ```
+
+Only one program can hold a dongle at a time: stop other SDR software (for example
+vhf_monitor) before starting `hertzd`.
 
 ---
 
@@ -109,7 +129,7 @@ macOS does not support containerized USB passthrough.
   ```bash
   cargo run --release -p hertz-daemon -- --config hertz.toml
   ```
-  *(Note: Because Hertz uses a pure-Rust driver, no external C library or homebrew `librtlsdr` installation is required).*
+  *(Note: Hertz uses a pure-Rust driver with a vendored libusb, so no homebrew `librtlsdr` is required. Transcription downloads the Whistle engine for macOS on first use.)*
 - **Run Remotely**: Deploy the daemon container on a Linux box (e.g., connected to the boat's network), and run the TUI locally connecting to the remote instance:
   ```bash
   hertz tui --connect http://boat.local:9080 --token $HERTZ_TOKEN
@@ -130,3 +150,20 @@ Connect to a remote Hertz daemon from another computer or run:
 ```bash
 docker run --rm -it ghcr.io/deepbluedynamics/hertz hertz --connect http://<IP>:9080 --token $HERTZ_TOKEN
 ```
+
+---
+
+## 5. Transcription Engine (Cactus Whistle)
+
+Transcription needs no install step. With `engine = "whistle"` in `[transcription]`,
+the first `hertzd` start downloads the needle engine library and the 16.9 MB
+`whistle.cact` weights from Hugging Face into the Whistle cache:
+
+| OS | Cache |
+| :--- | :--- |
+| Windows | `%LOCALAPPDATA%\whistle` |
+| Linux / macOS | `~/.cache/whistle` |
+
+For air-gapped hosts, copy those files over and point at them with
+`WHISTLE_LIB_PATH` (engine library) and `WHISTLE_WEIGHTS` (`.cact`), or move the
+whole cache with `WHISTLE_CACHE`.

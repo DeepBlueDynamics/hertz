@@ -18,12 +18,10 @@ use hertz_dsp::channelizer::{
     bytes_to_iq, design_lowpass_fir, detect_active_channels, estimate_noise_floor, extract_channel,
     ChannelProbe, FFT_DETECT_SIZE, LPF_CUTOFF_NORM, LPF_TAPS,
 };
-use hertz_dsp::classify::SignalClassification;
 use hertz_dsp::pipeline::{Pipeline, PipelineConfig, PipelineEvent, SDR_RATE};
 use hertz_dsp::Mode;
 use hertz_sdr::{WorkerEvent, WorkerHandle};
-use hertz_types::{Channel, DongleRole, Event};
-use num_complex::Complex32;
+use hertz_types::{Channel, Event};
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
@@ -62,6 +60,8 @@ pub struct DspThread {
     pub recorder_tx: Option<RecorderTx>,
     pub shutdown: Arc<AtomicBool>,
     pub channels: Arc<ChannelDb>,
+    /// Monitor-role scan list (channel ids); empty = fixed frequency.
+    pub scan: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -70,13 +70,16 @@ pub struct DspThread {
 
 /// Spawn the monitor-role DSP thread. Returns its join handle.
 pub fn spawn_monitor_loop(dsp: DspThread) -> thread::JoinHandle<()> {
+    if !dsp.scan.is_empty() {
+        return spawn_scan_loop(dsp);
+    }
     thread::Builder::new()
         .name(format!("dsp-monitor-{}", dsp.control.snapshot().dongle_id))
         .spawn(move || {
             let mut consumer = dsp.worker.reader();
             let mut acc: Vec<u8> = Vec::with_capacity(MONITOR_FRAME_BYTES * 2);
             let snap = dsp.control.snapshot();
-            let mut pipeline = build_pipeline(&snap, dsp.control.snapshot().listening);
+            let mut pipeline = build_pipeline(&snap);
             let mut freq = snap.freq_hz as u32;
             let mut last_freq_epoch = snap.freq_epoch;
             let mut last_squelch_epoch = snap.squelch_epoch;
@@ -98,7 +101,7 @@ pub fn spawn_monitor_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     debug!("monitor {} retune -> {} Hz", snap.dongle_id, freq);
                 }
                 if snap.squelch_epoch != last_squelch_epoch {
-                    pipeline = build_pipeline(&snap, snap.listening);
+                    pipeline = build_pipeline(&snap);
                     last_squelch_epoch = snap.squelch_epoch;
                 }
                 // Process whatever full frames we have.
@@ -219,14 +222,15 @@ fn dispatch_monitor_event(
     }
 }
 
-fn build_pipeline(snap: &DongleControlSnapshot, listening: bool) -> Pipeline {
+fn build_pipeline(snap: &DongleControlSnapshot) -> Pipeline {
     // T4: monitor is NFM; bandplan/per-channel mode selection arrives with the
     // channelized AM/SSB work. AM channels route through the channelized path.
     Pipeline::new(PipelineConfig {
         mode: Mode::Nfm,
         squelch_margin_db: snap.squelch_db,
         input_sample_rate_hz: SDR_RATE,
-        always_stream: listening,
+        // Squelch-gated only: streaming closed-squelch frames plays raw static.
+        always_stream: false,
         ..PipelineConfig::default()
     })
 }
@@ -250,12 +254,11 @@ struct ChannelSlot {
     label: String,
     mixer_phase: f32,
     last_signal: Instant,
-    hang_noted: bool,
 }
 
 /// Spawn the channelized-role DSP thread.
 pub fn spawn_channelized_loop(
-    mut dsp: DspThread,
+    dsp: DspThread,
     center_hz: u64,
     sample_rate_hz: u32,
 ) -> thread::JoinHandle<()> {
@@ -286,14 +289,7 @@ pub fn spawn_channelized_loop(
             // Seed the tap slot so its audio streams continuously.
             if let Some(tc) = &tap_channel {
                 if let Some(ch) = dsp.channels.get_by_id(tc) {
-                    ensure_slot(
-                        &mut slots,
-                        ch,
-                        center_hz,
-                        sample_rate_hz,
-                        &dsp.control,
-                        &Instant::now(),
-                    );
+                    ensure_slot(&mut slots, ch, &dsp.control, &Instant::now());
                 }
             }
 
@@ -326,26 +322,12 @@ pub fn spawn_channelized_loop(
                     // Create slots for newly detected channels + keep the tap alive.
                     for &(id_key, _power) in &detected {
                         if let Some(ch) = dsp.channels.get_by_id(&id_key_to_string(id_key)) {
-                            ensure_slot(
-                                &mut slots,
-                                ch,
-                                center_hz,
-                                sample_rate_hz,
-                                &dsp.control,
-                                &Instant::now(),
-                            );
+                            ensure_slot(&mut slots, ch, &dsp.control, &Instant::now());
                         }
                     }
                     if let Some(tc) = &tap_channel {
                         if let Some(ch) = dsp.channels.get_by_id(tc) {
-                            ensure_slot(
-                                &mut slots,
-                                ch,
-                                center_hz,
-                                sample_rate_hz,
-                                &dsp.control,
-                                &Instant::now(),
-                            );
+                            ensure_slot(&mut slots, ch, &dsp.control, &Instant::now());
                         }
                     }
 
@@ -427,8 +409,6 @@ pub fn spawn_channelized_loop(
 fn ensure_slot(
     slots: &mut HashMap<String, ChannelSlot>,
     ch: &Channel,
-    center_hz: u64,
-    sample_rate_hz: u32,
     control: &DongleControl,
     now: &Instant,
 ) {
@@ -443,7 +423,8 @@ fn ensure_slot(
             mode,
             squelch_margin_db: snap.squelch_db,
             input_sample_rate_hz: SDR_RATE, // post-extraction narrowband rate
-            always_stream: snap.tap_channel.as_deref() == Some(&ch.id) && snap.listening,
+            // Squelch-gated only: streaming closed-squelch frames plays raw static.
+            always_stream: false,
             ..PipelineConfig::default()
         });
         ChannelSlot {
@@ -453,7 +434,6 @@ fn ensure_slot(
             label: ch.label.clone(),
             mixer_phase: 0.0,
             last_signal: *now,
-            hang_noted: false,
         }
     });
 }
@@ -631,10 +611,6 @@ fn drain_into(consumer: &mut rtrb::Consumer<u8>, acc: &mut Vec<u8>) {
     }
 }
 
-fn pump_worker_events(_dsp: &DspThread) {
-    // (worker events handled by `poll_worker_events`)
-}
-
 fn poll_worker_events(dsp: &DspThread) {
     while let Ok(we) = dsp.worker.event_receiver().try_recv() {
         let snap = dsp.control.snapshot();
@@ -663,4 +639,120 @@ fn poll_worker_events(dsp: &DspThread) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Monitor role, scanning (vhf_monitor `scan`)
+// ---------------------------------------------------------------------------
+
+/// Keep listening on a channel this long after its squelch closes, so replies in a
+/// conversation are caught before the scan resumes (vhf_monitor AUTO_RESUME_SCAN_SEC).
+const SCAN_RESUME_AFTER: Duration = Duration::from_secs(5);
+
+/// Scanner: hop the monitor dongle through `dsp.scan`, one 200 ms dwell per channel
+/// (plus a 50 ms settle discard after each retune), and lock on any channel whose
+/// squelch opens. Each channel keeps its own pipeline, so noise floors and squelch
+/// state are per-channel.
+fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
+    thread::Builder::new()
+        .name(format!("dsp-scan-{}", dsp.control.snapshot().dongle_id))
+        .spawn(move || {
+            let chans: Vec<(String, u32)> = dsp
+                .scan
+                .iter()
+                .filter_map(|id| match dsp.channels.get_by_id(id) {
+                    Some(c) => Some((c.id.clone(), c.freq_hz as u32)),
+                    None => {
+                        warn!("scan: unknown channel id {id:?}, skipping");
+                        None
+                    }
+                })
+                .collect();
+            if chans.is_empty() {
+                warn!("scan list has no known channels; scanner idle");
+                return;
+            }
+            let snap = dsp.control.snapshot();
+            let mut pipelines: Vec<Pipeline> =
+                chans.iter().map(|_| build_pipeline(&snap)).collect();
+            let mut consumer = dsp.worker.reader();
+            let mut acc: Vec<u8> = Vec::with_capacity(MONITOR_FRAME_BYTES * 2);
+            let mut spectrum = SpectrumEmitter::new();
+            let span_hz = SDR_RATE as f64;
+
+            let mut idx = 0usize;
+            let _ = dsp.worker.retune(chans[idx].1);
+            // Bytes to drop after a retune: the worker read in flight when the retune
+            // was issued still holds the old frequency.
+            const SETTLE_BYTES: usize = crate::runtime::SCAN_READ_IQ_PAIRS * 2;
+            let mut settle_bytes = SETTLE_BYTES;
+            let mut last_open: Option<Instant> = None;
+            tracing::info!(
+                "scanning {} channel(s): {}",
+                chans.len(),
+                chans
+                    .iter()
+                    .map(|(id, _)| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+
+            while !dsp.shutdown.load(Ordering::Relaxed) {
+                poll_worker_events(&dsp);
+                drain_into(&mut consumer, &mut acc);
+                if settle_bytes > 0 {
+                    let n = settle_bytes.min(acc.len());
+                    acc.drain(..n);
+                    settle_bytes -= n;
+                }
+                while settle_bytes == 0 && acc.len() >= MONITOR_FRAME_BYTES {
+                    let frame: Vec<u8> = acc.drain(..MONITOR_FRAME_BYTES).collect();
+                    let iq = bytes_to_iq(&frame);
+                    let snap = dsp.control.snapshot();
+                    let freq = chans[idx].1;
+                    let pipeline = &mut pipelines[idx];
+                    if !pipeline.is_squelch_open() && last_open.is_none() {
+                        pipeline.clear_prebuffer();
+                    }
+                    for pe in pipeline.process_buffer(&iq) {
+                        dispatch_monitor_event(&dsp, &snap, freq, &pe);
+                    }
+                    if let Some(bins) = spectrum.maybe_emit(&iq) {
+                        let _ = dsp.spectrum_tx.send(SpectrumFrame {
+                            dongle_id: snap.dongle_id.clone(),
+                            dongle_idx: dsp.dongle_idx,
+                            center_hz: freq as f64,
+                            span_hz,
+                            squelch_open: pipeline.is_squelch_open(),
+                            bins_db: bins,
+                        });
+                    }
+
+                    // Lock while open; linger after close for replies; else hop.
+                    if pipeline.is_squelch_open() {
+                        last_open = Some(Instant::now());
+                        continue;
+                    }
+                    if let Some(t) = last_open {
+                        if t.elapsed() < SCAN_RESUME_AFTER {
+                            continue;
+                        }
+                        last_open = None;
+                    }
+                    if chans.len() > 1 {
+                        idx = (idx + 1) % chans.len();
+                        let _ = dsp.worker.retune(chans[idx].1);
+                        acc.clear();
+                        drain_into(&mut consumer, &mut acc);
+                        acc.clear();
+                        settle_bytes = SETTLE_BYTES;
+                        break;
+                    }
+                }
+                if acc.len() < MONITOR_FRAME_BYTES {
+                    thread::sleep(Duration::from_millis(2));
+                }
+            }
+        })
+        .expect("spawn scan dsp thread")
 }

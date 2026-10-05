@@ -25,9 +25,6 @@ const DC_ALPHA: f32 = 0.001;
 /// Post-discriminator audio low-pass cutoff (Hz).
 const AUDIO_LPF_CUTOFF_HZ: f32 = 3000.0;
 
-/// Peak-normalization target.
-const PEAK_NORM_TARGET: f32 = 0.7;
-
 pub struct NfmDemod {
     input_rate_hz: u32,
     prev_sample: Complex32,
@@ -36,6 +33,9 @@ pub struct NfmDemod {
     chan_fir: Vec<f32>,
     /// Unconsumed tail — keeps filter + decimation phase continuous across buffers.
     fir_hist: Vec<Complex32>,
+    /// DC-block and audio LPF state, carried across buffers so frame edges don't click.
+    dc_state: f32,
+    lpf_state: f32,
 }
 
 impl NfmDemod {
@@ -55,6 +55,8 @@ impl NfmDemod {
             freq_corr_phase: 0.0,
             chan_fir: crate::channelizer::design_lowpass_fir(CHAN_FIR_TAPS, cutoff_norm),
             fir_hist: Vec::new(),
+            dc_state: 0.0,
+            lpf_state: 0.0,
         }
     }
 
@@ -133,28 +135,18 @@ impl NfmDemod {
         }
         self.prev_sample = prev;
 
-        // DC-block (one-pole high-pass).
-        let mut dc_offset = 0.0f32;
-        let hp: Vec<f32> = audio
-            .iter()
-            .map(|&sample| {
-                dc_offset = DC_ALPHA * sample + (1.0 - DC_ALPHA) * dc_offset;
-                sample - dc_offset
-            })
-            .collect();
-
-        let filtered = simple_lowpass(&hp, self.output_rate_hz() as f32, AUDIO_LPF_CUTOFF_HZ);
-
-        // Peak-normalize to 0.7.
-        let max = filtered.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
-        let audio = if max > 0.01 {
-            filtered
-                .iter()
-                .map(|&x| (x / max) * PEAK_NORM_TARGET)
-                .collect()
-        } else {
-            filtered
-        };
+        // DC-block (one-pole high-pass) then voice LPF, both stateful across buffers.
+        // Level is left raw: the pipeline's VoiceOut AGC sets loudness smoothly
+        // (per-buffer peak normalization pumped and clicked every 200 ms).
+        let rc = 1.0 / (2.0 * PI * AUDIO_LPF_CUTOFF_HZ);
+        let dt = 1.0 / self.output_rate_hz() as f32;
+        let lpf_alpha = dt / (rc + dt);
+        for s in audio.iter_mut() {
+            self.dc_state = DC_ALPHA * *s + (1.0 - DC_ALPHA) * self.dc_state;
+            let x = *s - self.dc_state;
+            self.lpf_state += lpf_alpha * (x - self.lpf_state);
+            *s = self.lpf_state;
+        }
         (audio, narrow_db)
     }
 }

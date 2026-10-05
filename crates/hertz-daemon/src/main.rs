@@ -20,6 +20,9 @@ async fn main() -> anyhow::Result<()> {
     // Optional `--mock`: boot a MockFactory so the binary runs and serves with no
     // hardware attached (smoke-test the network surface / `doctor`).
     let mock_mode = argv.iter().any(|a| a == "--mock");
+    // Optional `--listen`: play squelch-gated audio on the local speakers and log
+    // squelch activity to the console (vhf_monitor-style, no TUI needed).
+    let listen_mode = argv.iter().any(|a| a == "--listen");
 
     let config_path: Option<String> = argv
         .iter()
@@ -39,6 +42,10 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Daemon::start(config, Arc::new(RealFactory), channels).await?
     };
+
+    if listen_mode {
+        hertz_daemon::speaker::spawn(&daemon.state.bus);
+    }
 
     // ctrl-c → graceful shutdown.
     tokio::signal::ctrl_c().await?;

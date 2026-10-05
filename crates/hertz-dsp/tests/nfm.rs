@@ -132,3 +132,22 @@ fn nfm_warmup_then_stable() {
     let peak = na.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
     assert!(peak <= 0.71, "peak-normalized output should stay ≤ 0.7+");
 }
+
+#[test]
+fn voice_out_level_is_sane_for_typical_deviation() {
+    // 1 kHz tone at 3 kHz deviation (typical speech) through demod + listening chain
+    // should land at a comfortable level: audible, not limiter-crushed.
+    use hertz_dsp::voice_out::VoiceOut;
+    let n = SDR_RATE as usize;
+    let iq = fm_signal(SDR_RATE, n, 0.0, 1000.0, 3000.0, 1.0);
+    let mut demod = NfmDemod::new(SDR_RATE);
+    let (mut audio, _) = demod.process(&iq);
+    let mut out = VoiceOut::new(AUDIO_RATE as f32, true);
+    out.process(&mut audio);
+    let tail = &audio[audio.len() / 2..];
+    let peak = tail.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(
+        (0.3..0.9).contains(&peak),
+        "voice level peak {peak:.3} outside 0.3..0.9"
+    );
+}

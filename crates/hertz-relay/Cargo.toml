@@ -1,0 +1,12 @@
+[package]
+name = "hertz-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Bridges Hertz to Hyperia (pane/tab layout) and ollaya (decision model)."
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Plain-HTTP localhost clients; no TLS stack.
+ureq = { version = "2", default-features = false, features = ["json"] }

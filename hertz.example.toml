@@ -1,7 +1,7 @@
 # /etc/hertz/hertz.toml
 [daemon]
 listen = "0.0.0.0:9080"
-data_dir = "/data"                    # recordings/, transcripts/, extracts/, logs/
+data_dir = "/data"                    # recordings/, transcriptions/, logs/, history/
 auth_token = "env:HERTZ_TOKEN"        # required for non-localhost + all MCP writes
 
 [[dongle]]
@@ -12,7 +12,17 @@ tap_channel = "16"                    # always-on audio tap
 squelch_db = 12.0
 record = true
 
-# Phase 5 - Uncomment to enable a second hopscan dongle
+# Monitor role: tune one channel directly, or scan a list and lock on activity.
+# [[dongle]]
+# serial = "00000001"
+# role = "monitor"
+# bandplan = "marine-vhf-us"
+# frequency_hz = 156625000             # fixed frequency when not scanning
+# scan = ["68", "69", "71", "72"]       # hop these, lock while squelch is open
+# squelch_db = 6.0
+# record = true
+
+# Phase 5 - hopscan role (accepted by the config, not implemented yet)
 # [[dongle]]
 # serial = "PUBLIC01"
 # role = "hopscan"                      # analog-scanner style retune-and-dwell
@@ -22,8 +32,8 @@ record = true
 # squelch_db = 9.0
 # record = true
 
-# Transcription config (currently disabled)
+# Transcription: Cactus Whistle, on-device (model downloads to the Whistle cache).
 # [transcription]
-# engine = "whisper-internal"
-# model = "small"
-# language = "auto"
+# engine = "whistle"
+# language = "auto"                     # or en, de, fr, es, it, nl, pl
+# keywords = ["channel sixteen"]        # bias toward call signs and vessel names

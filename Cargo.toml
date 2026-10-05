@@ -8,6 +8,7 @@ members = [
     "crates/hertz-daemon",
     "crates/hertz-tui",
     "crates/hertz-tx",
+    "crates/hertz-relay",
 ]
 
 [workspace.dependencies]
@@ -37,6 +38,7 @@ crossterm = "0.28"
 cpal = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
 reqwest = { version = "0.12", features = ["json"] }
+libc = "0.2"
 
 
 [profile.release]

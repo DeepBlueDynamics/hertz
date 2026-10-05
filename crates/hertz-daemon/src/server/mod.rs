@@ -5,7 +5,6 @@
 pub mod audio_endpoint;
 
 use std::net::SocketAddr;
-use std::time::Instant;
 
 use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
@@ -322,7 +321,7 @@ async fn get_entropy(State(state): State<DaemonState>, Query(q): Query<EntropyQu
         .unwrap()
         .values()
         .next()
-        .and_then(|_| Some(()))
+        .map(|_| ())
         .map(|_| Vec::<u8>::new())
         .unwrap_or_default();
     let _ = n;
@@ -515,7 +514,6 @@ async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQ
 
     // Merge event + audio + spectrum streams. Alternate with the client's
     // incoming messages so we notice a closed socket (client disconnect) promptly.
-    let mut client_closed = false;
     loop {
         tokio::select! {
             ev = ev_rx.recv() => match ev {
@@ -537,7 +535,7 @@ async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQ
                 Ok(frame) => {
                     if audio_accepts(&filter.audio, &frame) {
                         let bytes = frame.encode();
-                        if sender.send(Message::Binary(bytes.into())).await.is_err() { break; }
+                        if sender.send(Message::Binary(bytes)).await.is_err() { break; }
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => warn!("ws audio lagged {n}"),
@@ -547,7 +545,7 @@ async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQ
                 Ok(frame) => {
                     if spectrum_accepts(&filter.spectrum, &frame) {
                         let bytes = frame.encode();
-                        if sender.send(Message::Binary(bytes.into())).await.is_err() { break; }
+                        if sender.send(Message::Binary(bytes)).await.is_err() { break; }
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => warn!("ws spectrum lagged {n}"),
@@ -555,13 +553,10 @@ async fn run_ws(socket: axum::extract::ws::WebSocket, state: DaemonState, q: WsQ
             },
             msg = receiver.next() => {
                 match msg {
-                    Some(Ok(Message::Close(_))) | None => { client_closed = true; break; }
+                    Some(Ok(Message::Close(_))) | None => break,
                     _ => {} // ignore client text/binary
                 }
             }
-        }
-        if client_closed {
-            break;
         }
     }
     let _ = sender.close().await;

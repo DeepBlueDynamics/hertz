@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
@@ -791,6 +791,10 @@ async fn run_tui(
         // --- Process Crossterm Keyboard/Mouse events ---
         if event::poll(Duration::from_millis(5))? {
             if let Event::Key(k) = event::read()? {
+                // Windows reports Press and Release; act on Press only or toggles cancel out.
+                if k.kind != KeyEventKind::Press {
+                    continue;
+                }
                 // Quit globally
                 if k.code == KeyCode::Char('q') {
                     break;

@@ -126,3 +126,81 @@ The working-tree diffs on `README.md` and `plan/breif.md.txt` are **not mine**
 ### Blocked / deferred
 - None for T4.1. Downstream T6 (Crane) already decodes these frames; the wire
   format matches the brief exactly.
+
+---
+
+## Follow-up — startup dongle reconnect + out-of-span channel warning: ✅ DONE
+*(quality gate green; uncommitted in working tree for supervisor review)*
+
+Bug from live ops (supervisor): when a dongle's SDR open fails **at startup**, the
+runtime logged one ERROR and gave up — so a boat dongle that enumerates after boot
+(or a usbipd attach that lands late) left the daemon permanently radioless. The
+mid-run device-loss path already reconnected (`hertz_sdr` retries `open_by_serial`
+and emits `DeviceLost`/`DeviceReconnected`, handled by the DSP thread); the startup
+path had no such loop because no worker/DSP thread was ever created.
+
+### What changed (`crates/hertz-daemon/**` only)
+
+**1. Startup reconnect watcher — `runtime.rs`.** Restructured the per-dongle startup
+loop: on `factory.spawn_worker` failure it now (a) marks the dongle offline +
+emits `DongleStatus(online=false)`, and (b) spawns a dedicated **reconnect watcher**
+OS thread (`reconnect-<id>`) that retries the open by serial every ~5 s forever,
+watching its shutdown flag at 200 ms granularity so it exits promptly on shutdown.
+On success it marks the dongle online, emits `DongleStatus(online=true)`, launches
+the DSP thread (sharing the watcher's shutdown flag), and registers it in the late
+registries — i.e. the dongle **comes fully online** the moment the device appears.
+Mirrors `hertz_sdr`'s own mid-run reconnect loop (same retry-by-serial model).
+- Extracted `launch_dsp(ctx, worker, shutdown)` + `DongleLaunchCtx` so the DSP
+  spawn logic is shared by the startup-success and reconnect paths.
+- `Daemon` gained `late_dsp_threads` / `late_dongles` (`Arc<Mutex<Vec<…>>>`) +
+  `watchers`; `shutdown()` also stops late workers; `join()` joins watchers, then
+  drains/joins late DSP threads (non-hanging: all bound by their sleep cadence).
+- New `Daemon::start_with_reconnect_interval(config, factory, channels, interval)`
+  for testability; `Daemon::start` is now a thin wrapper passing `Duration::from_secs(5)`
+  (production default, public API unchanged).
+
+**2. Out-of-span bandplan warning — `runtime.rs`.** At startup, each channelized
+dongle logs a `WARN` listing bandplan RX channels that fall outside its effective
+capture span (`center ± sample_rate/2`, including the defaults applied when the
+bandplan declares neither). Verified live against the real bandplan:
+```
+WARN hertz_daemon::runtime: dongle MARINE01-0 (Channelized, group "marine-vhf-us")
+  capture span 155.6000–158.0000 MHz excludes 7 bandplan RX channel(s):
+  marine-wx-1 'ENV-RX' (162.5500 MHz), marine-wx-2 … marine-wx-7 (162.5250 MHz)
+```
+(All 7 NOAA-WX marine channels flagged, exactly the "WX ones" discussed.) No-op for
+the monitor/hopscan roles.
+
+**3. Test seam — `factory.rs`.** `MockFactory` builder is now attempt-indexed;
+added `MockFactory::from_fallible_closure(Fn(u64) -> Result<Box<dyn SdrDevice>, SdrError>)`
+so a test can make the first open(s) return `Err` (simulating a missing dongle) and
+later succeed. `from_closure`/`new` keep their existing behavior (always `Ok`).
+
+**4. Test — `mock_e2e.rs::dongle_reconnects_after_startup_open_failure`.** Boots a
+daemon whose first open returns `SdrError::NotFound`; asserts over real HTTP + WS:
+1. `GET /api/status` immediately shows the dongle `online=false`;
+2. the WS then receives `DongleStatus(online=true)` (the reconnect transition) and
+   binary audio frames (the DSP thread launched after reconnect);
+3. `GET /api/status` now shows `online=true`.
+Uses the 200 ms retry interval via `start_with_reconnect_interval`; passes in ~1.6 s.
+
+### Verification (on this working tree)
+```
+$ cargo fmt  -p hertz-types -p hertz-daemon --check        # CLEAN
+$ cargo clippy -p hertz-types -p hertz-daemon --all-targets # 0 warnings
+$ cargo test   -p hertz-types -p hertz-daemon
+   hertz-daemon lib:       3 passed
+   hertz-daemon mock_e2e:  3 passed  (+1 reconnect test)
+   hertz-daemon rest:      2 passed
+   hertz-types:           10 passed
+$ ./target/debug/hertzd --mock /tmp/hertz-span.toml        # WX out-of-span WARN fires
+```
+
+### Notes for the supervisor
+- Files changed (all under `crates/hertz-daemon/**`): `src/runtime.rs`,
+  `src/factory.rs`, `tests/mock_e2e.rs`. **No new dependencies** (uses existing
+  `rustfft`, `std`, `hertz_sdr`, `hertz_channels`, `hertz_types`).
+- The working-tree `Cargo.toml` (`libc = "0.2"`) / `Cargo.lock` / `README.md` /
+  `plan/breif.md.txt` diffs are **not mine** (another worker's pending `libc` dep +
+  CRLF churn); I did not add `libc` and the daemon builds without it.
+- No git mutations performed.

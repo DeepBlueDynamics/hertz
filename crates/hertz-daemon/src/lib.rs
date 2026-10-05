@@ -1,4 +1,3 @@
-#![allow(warnings)]
 //! `hertzd` — the Hertz daemon: owns dongles, DSP, storage, and the network surface.
 //!
 //! Scope of this crate (PLAN §11 Phase 3 / T4): monitor + channelized roles on axum
@@ -14,6 +13,7 @@ pub mod pipeline_bridge;
 pub mod recorder;
 pub mod runtime;
 pub mod server;
+pub mod speaker;
 pub mod spectrum;
 pub mod transcribe;
 
@@ -23,4 +23,4 @@ pub use control::{DongleControl, DongleRuntimeHandle};
 pub use factory::{MockFactory, RealFactory, SdrFactory};
 pub use recorder::RecorderHandle;
 pub use runtime::Daemon;
-pub use transcribe::{DisabledTranscriber, Transcriber};
+pub use transcribe::{DisabledTranscriber, Transcriber, WhistleTranscriber};
