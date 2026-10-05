@@ -45,6 +45,7 @@ fn monitor_config(listen: String, data_dir: String, auth_token: Option<String>) 
         }],
         transcription: None,
         tx: None,
+        relay: None,
     }
 }
 

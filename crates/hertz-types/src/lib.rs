@@ -44,6 +44,9 @@ pub enum Event {
         channel: Option<String>,
         freq_hz: u64,
         text: String,
+        /// Path of the transcribed WAV, when known (lets listeners re-check it).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recording: Option<String>,
     },
     Translation {
         dongle_id: String,
@@ -324,6 +327,57 @@ pub struct DaemonConfig {
     pub dongles: Vec<DongleConfig>,
     pub transcription: Option<TranscriptionConfig>,
     pub tx: Option<TxConfig>,
+    /// Route transcripts to Hyperia panes (present = enabled).
+    #[serde(default)]
+    pub relay: Option<RelayConfig>,
+}
+
+/// Radio call -> Hyperia pane relay. ollaya picks the pane a transcript addresses
+/// from the live pane list; hertz `msg_send`s it there as its own agent identity.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RelayConfig {
+    #[serde(default = "default_hyperia_url")]
+    pub hyperia_url: String,
+    /// File holding the `hertz-radio` agent token (`~` expands to the home dir).
+    #[serde(default = "default_token_file")]
+    pub token_file: String,
+    #[serde(default = "default_ollaya_url")]
+    pub ollaya_url: String,
+    #[serde(default = "default_ollaya_model")]
+    pub ollaya_model: String,
+    /// ollaya's pick must reach this probability, else the call is logged as unmatched.
+    #[serde(default = "default_min_probability")]
+    pub min_probability: f64,
+    /// Transcription service used to double-check relayed calls after sending; if it
+    /// hears more, a follow-up goes to the same pane. Skipped while it is down;
+    /// empty disables the check.
+    #[serde(default = "default_verify_url")]
+    pub verify_url: String,
+    #[serde(default = "default_verify_model")]
+    pub verify_model: String,
+}
+
+fn default_verify_url() -> String {
+    "http://localhost:8765".to_string()
+}
+fn default_verify_model() -> String {
+    "medium".to_string()
+}
+
+fn default_hyperia_url() -> String {
+    "http://localhost:9800/mcp".to_string()
+}
+fn default_token_file() -> String {
+    "~/.hertz/hyperia-token".to_string()
+}
+fn default_ollaya_url() -> String {
+    "http://127.0.0.1:11435".to_string()
+}
+fn default_ollaya_model() -> String {
+    "laya:en".to_string()
+}
+fn default_min_probability() -> f64 {
+    0.5
 }
 
 impl DaemonConfig {

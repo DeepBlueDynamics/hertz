@@ -11,6 +11,7 @@ pub mod factory;
 pub mod history;
 pub mod pipeline_bridge;
 pub mod recorder;
+pub mod relay;
 pub mod runtime;
 pub mod server;
 pub mod speaker;

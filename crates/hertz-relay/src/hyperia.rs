@@ -64,6 +64,14 @@ pub struct HyperiaClient {
 }
 
 impl HyperiaClient {
+    /// Explicit endpoint and bearer (a daemon uses its own agent identity).
+    pub fn new(url: impl Into<String>, token: Option<String>) -> Self {
+        Self {
+            url: url.into(),
+            token: token.filter(|t| !t.is_empty()),
+        }
+    }
+
     pub fn from_env() -> Self {
         Self {
             url: std::env::var("HYPERIA_MCP_URL").unwrap_or_else(|_| DEFAULT_URL.to_string()),
@@ -77,6 +85,16 @@ impl HyperiaClient {
     pub fn layout(&self) -> Result<Layout> {
         let text = self.call_tool("terminal_status", serde_json::json!({}))?;
         serde_json::from_str(&text).context("parse terminal_status")
+    }
+
+    /// Send durable mail to a pane (`msg_send`). The first send to a pane asks the
+    /// human for consent; Hyperia holds the message and releases it on approval.
+    /// Returns Hyperia's reply (operation state) as text.
+    pub fn msg_send(&self, pane_id: &str, subject: &str, body: &str) -> Result<String> {
+        self.call_tool(
+            "msg_send",
+            serde_json::json!({ "pane": pane_id, "subject": subject, "body": body }),
+        )
     }
 
     /// Invoke one Hyperia tool; returns its first text content block.

@@ -23,3 +23,17 @@ engine = "whistle"
 language = "en"
 # Bias recognition toward these (call signs, vessel names, prowords).
 keywords = ["Alpha India", "Alpha Tango", "Top Rabbit", "come in", "over", "channel sixteen"]
+
+# Route each transcript to the Hyperia pane it names ("Top Rabbit, come in, over").
+# ollaya picks from the live pane list; unmatched calls are only logged here.
+# Needs the hertz-radio identity token (docs/OPERATIONS.md, "Relay to Hyperia panes").
+[relay]
+token_file = "~/.hertz/hyperia-token"
+# hyperia_url = "http://localhost:9800/mcp"
+# ollaya_url = "http://127.0.0.1:11435"
+# ollaya_model = "laya:en"
+# min_probability = 0.5
+# After sending, double-check on the transcription service (skipped when it is down;
+# "" disables) and send a follow-up if it heard more.
+# verify_url = "http://localhost:8765"
+# verify_model = "medium"

@@ -494,6 +494,7 @@ mod tests {
                 channel: Some("16".into()),
                 freq_hz: 156_800_000,
                 text: "securite".into(),
+                recording: None,
             },
             Event::Translation {
                 dongle_id: "D1".into(),

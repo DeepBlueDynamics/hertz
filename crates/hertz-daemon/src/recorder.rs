@@ -136,6 +136,7 @@ async fn handle_job(
                     channel,
                     freq_hz: freq_hz_u64,
                     duration_sec,
+                    live: true,
                 },
             ));
         }
@@ -163,6 +164,10 @@ struct TranscribeMeta {
     channel: Option<String>,
     freq_hz: u64,
     duration_sec: f32,
+    /// A transmission that just happened (publishes a live event). Backfilled
+    /// recordings only write their transcript file, so restarts don't replay old
+    /// calls to listeners like the Hyperia relay.
+    live: bool,
 }
 
 /// Transcribe one recording, write `transcriptions/<recording>.txt`, publish the event.
@@ -218,12 +223,13 @@ async fn transcribe_job(
             &text
         }
     );
-    if !text.is_empty() {
+    if meta.live && !text.is_empty() {
         bus.publish_event(Event::Transcription {
             dongle_id: meta.dongle_id,
             channel: meta.channel,
             freq_hz: meta.freq_hz,
             text,
+            recording: Some(meta.path.to_string_lossy().to_string()),
         });
     }
 }
@@ -300,5 +306,6 @@ fn meta_from_filename(path: PathBuf) -> TranscribeMeta {
         channel,
         freq_hz,
         duration_sec,
+        live: false,
     }
 }

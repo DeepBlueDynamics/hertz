@@ -104,3 +104,63 @@ It checks:
 4. **Serial Uniqueness**:
    - Ensures each connected dongle has a unique serial number in its EEPROM.
    - *Fix*: If duplicates are found, use `rtl_eeprom -s` to assign unique serials (e.g., `MARINE01`, `PUBLIC01`), as duplicate serials cause role assignment conflicts in the config.
+
+---
+
+## 5. Relay to Hyperia Panes
+
+With a `[relay]` section, every transcript is routed to the Hyperia pane it names.
+Say the pane's name on the air ("Top Rabbit, come in, over"):
+
+1. hertzd pulls the live pane list from Hyperia (`terminal_status`).
+2. ollaya ([OLLAYA.md](OLLAYA.md)) picks which pane the transcript addresses, with
+   an explicit "none of these panes" option. There is no fuzzy matching: a pick
+   below `min_probability` (default 0.5), or "none", is not routed.
+3. A match is sent to that pane with Hyperia's `msg_send` (subject
+   `[radio] Ch 71 156.575 MHz`, body = the transcript). The pane gets a
+   `[Hyperia mail]` notice. Hyperia asks you once per pane whether hertz may
+   message it; after that it delivers unattended.
+
+The console shows the outcome of every call:
+
+```
+RELAY | Ch 72 | -> Top Rabbit 🧟 (p=0.98) | awaiting_approval
+RELAY | Ch 72 | double-check heard more (p=0.63): "Top Rabbit, Top Rabbit, this is Alpha Tango, come in, over." -> follow-up to Top Rabbit 🧟 | ...
+RELAY | Ch 71 | can't find a pane for "Alpha India, come in" (best guess "(none of these panes)", p=0.55)
+```
+
+`awaiting_approval` is Hyperia holding the first message to a pane until you
+approve; later messages to that pane go straight through.
+
+**Double-check.** After a call is sent, if the transcription service at
+`verify_url` (default `http://localhost:8765`, Whisper `verify_model` = `medium`)
+is up, hertzd re-transcribes the recording there. ollaya is given the words each
+transcript heard that the other didn't and decides whether the server version
+adds real information (a call sign, name, place, number or instruction) or only
+differs trivially. If it adds something, a follow-up goes to the same pane with
+subject `Re: [radio] Ch 72 156.625 MHz`, the server transcript and the original.
+The check never delays the first message, is skipped while the service is down,
+and is turned off with `verify_url = ""`.
+
+Only live transmissions are relayed; transcripts made for old recordings at
+startup are not.
+
+### One-time setup: the `hertz-radio` identity
+
+hertzd talks to Hyperia as its own agent identity, not a pane's (pane tokens die
+with the pane). Register it once, without a pane token so the mailbox isn't bound
+to your pane, and store the token outside the repo:
+
+```powershell
+$r = Invoke-RestMethod http://localhost:9800/mcp -Method Post -ContentType application/json `
+  -Headers @{ Accept = 'application/json, text/event-stream' } `
+  -Body '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"request_token","arguments":{"name":"hertz-radio","single_session":true}}}'
+# Save the hyp_agent_... token from the reply to ~/.hertz/hyperia-token (user-only permissions).
+```
+
+Check which pane a call would reach, without sending anything:
+
+```bash
+cargo run -p hertz-relay --example route -- "Top Rabbit, come in, over."
+cargo run -p hertz-relay --example verify -- data/recordings/<file>.wav "<on-device text>"
+```

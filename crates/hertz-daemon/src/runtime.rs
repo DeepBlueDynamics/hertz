@@ -127,6 +127,9 @@ impl Daemon {
         let recorder =
             RecorderHandle::spawn(bus.clone(), data_dir.clone(), Arc::clone(&transcriber));
         crate::recorder::spawn_backfill(bus.clone(), transcriber, data_dir);
+        if let Some(relay) = &config.relay {
+            crate::relay::spawn(&bus, relay);
+        }
         let recorder_tx = recorder.tx.clone();
 
         for (idx, dc) in config.dongles.iter().enumerate() {
@@ -415,6 +418,7 @@ fn record_history(history: &History, ev: &Event) {
             channel,
             freq_hz,
             text,
+            ..
         } => {
             history.record_transcript(hertz_types::wire::TranscriptEntry {
                 ts_sec: now,

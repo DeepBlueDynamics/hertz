@@ -37,3 +37,8 @@ record = true
 # engine = "whistle"
 # language = "auto"                     # or en, de, fr, es, it, nl, pl
 # keywords = ["channel sixteen"]        # bias toward call signs and vessel names
+
+# Relay: route transcripts to the Hyperia pane they name (see docs/OPERATIONS.md).
+# [relay]
+# token_file = "~/.hertz/hyperia-token"
+# min_probability = 0.5

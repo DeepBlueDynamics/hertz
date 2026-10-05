@@ -956,6 +956,7 @@ dependencies = [
  "futures",
  "hertz-channels",
  "hertz-dsp",
+ "hertz-relay",
  "hertz-sdr",
  "hertz-types",
  "hound",

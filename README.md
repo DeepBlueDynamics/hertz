@@ -102,7 +102,12 @@ call signs and vessel names.
 ## Hyperia and ollaya (`hertz-relay`)
 
 `hertz-relay` connects hertz to the Hyperia terminal and the ollaya decision
-model, the groundwork for routing radio calls to agent panes:
+model. With a `[relay]` section in the config, hertzd routes each transcript to the
+Hyperia pane it names: say "Top Rabbit, come in, over" and ollaya picks Top Rabbit
+from the live pane list, and hertz `msg_send`s the transcript to it. Calls that
+name no pane are only logged. Setup and details: [docs/OPERATIONS.md](docs/OPERATIONS.md#5-relay-to-hyperia-panes).
+
+`hertz-panes` shows what ollaya sees:
 
 ```powershell
 cargo run --release -p hertz-relay --bin hertz-panes
