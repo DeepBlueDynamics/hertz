@@ -1,4 +1,4 @@
-//! WAV recorder — ported from `plan/reference/gnosis-radio/src/pipeline/recorder.rs`.
+//! WAV recorder — ported from gnosis-radio `pipeline/recorder.rs`.
 //!
 //! Writes 48 kHz / 16-bit / mono WAVs with 10 ms fades, using the gnosis filename
 //! scheme but with a configurable output directory (gnosis hardcoded `recordings/`).

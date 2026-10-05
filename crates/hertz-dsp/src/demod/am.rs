@@ -1,4 +1,4 @@
-//! Amplitude-modulation demodulator — NEW in Hertz (PLAN §4), needed for CB and
+//! Amplitude-modulation demodulator — new in Hertz, needed for CB and
 //! airband. Envelope detector with DC-block and a simple AGC, sharing the NFM
 //! channel-FIR front end so selectivity is identical to the NFM path.
 //!

@@ -1,6 +1,6 @@
 //! Demodulator front ends. Selected by [`Mode`] on [`crate::PipelineConfig`].
 //!
-//! NFM is ported from gnosis's `NFMDemod`; AM is new (PLAN §4) for CB + airband.
+//! NFM is ported from gnosis's `NFMDemod`; AM is new for CB + airband.
 
 pub mod am;
 pub mod nfm;
@@ -15,7 +15,7 @@ pub use nfm::NfmDemod;
 pub enum Mode {
     /// Narrowband FM (marine, GMRS, MURS, ham, rail). Ported from gnosis.
     Nfm,
-    /// Amplitude modulation (CB, airband). New in Hertz (PLAN §4).
+    /// Amplitude modulation (CB, airband). New in Hertz.
     Am,
 }
 

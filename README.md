@@ -1,5 +1,7 @@
 # hertz
 
+![Hertz: radio in, words out. Multi-dongle RTL-SDR with on-device transcription.](docs/hertz-v0.1.0.jpg)
+
 A multi-dongle RTL-SDR radio receiver in Rust, tuned for marine VHF. `hertzd` owns
 the dongles, demodulates NFM/AM, runs a squelch, records each transmission to WAV,
 transcribes it on-device with [Cactus Whistle](../forest/whistle), and serves
@@ -113,6 +115,9 @@ It reads the window/tab/pane layout from Hyperia (`HYPERIA_MCP_URL`,
 (`OLLAYA_URL`, default `http://127.0.0.1:11435`, model `laya:en`) and asks which
 tab and pane are active, printing ollaya's answer next to Hyperia's own.
 
+Setting up ollaya (container, model pulls, the `/api/decide` format):
+[docs/OLLAYA.md](docs/OLLAYA.md).
+
 ## Workspace
 
 | Crate | Purpose |
@@ -138,14 +143,15 @@ bandwidth settings.
 
 ## Known limitations
 
-- **Docker build.** `hertz-daemon` depends on `whistle` by path
-  (`../../../forest/whistle`), outside the Docker build context, so
-  `docker compose build` fails until whistle is vendored into this repo or
-  published.
+- **Whistle checkout.** `hertz-daemon` depends on `whistle` by path
+  (`../forest/whistle`), so building needs that checkout next to this repo until
+  whistle is vendored or published.
 - **Gain.** The pure-Rust driver's manual gain pins the tuner VGA at 16.3 dB,
   about 10 dB below librtlsdr's, so dongles run on tuner AGC.
 - **Hopscan** is not implemented, and the TUI's band scope does not render the
   monitor role's spectrum correctly yet.
 
-More: [docs/INSTALL.md](docs/INSTALL.md) (drivers, Docker, WSL2) and
-[docs/OPERATIONS.md](docs/OPERATIONS.md) (data, bandplans, diagnostics).
+More: [docs/INSTALL.md](docs/INSTALL.md) (drivers per OS, Whistle),
+[docs/OPERATIONS.md](docs/OPERATIONS.md) (data, bandplans, diagnostics),
+[docs/OLLAYA.md](docs/OLLAYA.md) (ollaya setup), and the frontend plans in
+[plan/](plan/) (TUI waterfall spec and client brief).

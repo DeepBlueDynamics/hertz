@@ -1,5 +1,5 @@
 //! The single-port axum server: REST `/api/*`, WS `/stream`, SSE `/events`, and
-//! chunked `/audio` (PLAN §5). Auth: bearer-token middleware for non-loopback peers
+//! chunked `/audio`. Auth: bearer-token middleware for non-loopback peers
 //! when `auth_token` is configured; loopback is exempt.
 
 pub mod audio_endpoint;

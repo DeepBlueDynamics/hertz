@@ -1,4 +1,4 @@
-//! History accumulator (PLAN §5): ring buffers of recent activity + transcripts,
+//! History accumulator: ring buffers of recent activity + transcripts,
 //! with JSONL append persistence under `data_dir/history/` so restarts don't amnesia
 //! the day's log. Audio is never persisted here (only its recording files).
 

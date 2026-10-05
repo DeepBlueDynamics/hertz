@@ -1,6 +1,6 @@
 //! `hertzd` — the Hertz daemon: owns dongles, DSP, storage, and the network surface.
 //!
-//! Scope of this crate (PLAN §11 Phase 3 / T4): monitor + channelized roles on axum
+//! Scope of this crate: monitor + channelized roles on axum
 //! (REST + WS + SSE + `/audio` on one port). Hopscan, MCP, and the transcription
 //! engines are later phases; only seams are provided here.
 

@@ -5,8 +5,6 @@
 //! It performs **no I/O and no logging** in its hot path. The top-level [`Pipeline`]
 //! consumes complex baseband IQ and returns a stream of [`PipelineEvent`] values; the
 //! daemon (a separate crate) wires those events to its event bus, recorder, and logs.
-//!
-//! See `plan/PLAN.md` §11 (Phase 2) and `plan/tasks/T2-sloth-dsp.md`.
 
 pub mod analysis;
 pub mod channelizer;

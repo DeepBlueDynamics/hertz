@@ -2,7 +2,7 @@
 //! interpolation, noise-floor tracking, spectral-flatness squelch, impulse/click
 //! suppression, audio notch, and phase-slope frequency estimation.
 //!
-//! Direct port of `plan/reference/gnosis-radio/src/dsp.rs`, cleaned up: NaN-safe
+//! Direct port of gnosis-radio `dsp.rs`, cleaned up: NaN-safe
 //! comparisons (via `total_cmp`), no redundant `Complex32`→`Complex<f32>` conversion
 //! (`num_complex::Complex32` *is* `rustfft`'s `Complex<f32>`), and the FFT planner is
 //! cached on the detector.

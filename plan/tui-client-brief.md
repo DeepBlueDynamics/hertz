@@ -1,9 +1,11 @@
-# T6 — TUI client (`hertz tui`) — unassigned, ready for dispatch
+# TUI client (`hertz tui`) — frontend plan
 
-Phase 4 of `plan/PLAN.md` §11. The ratatui client. **Normative reference for the waterfall
-pane: `plan/tui-waterfall-spec.md` (v1.0)** — implement it as written, with the adaptations
-in §Adaptations below. Overall pane layout: PLAN §8. Wire protocol: `hertz-types/src/wire.rs`
-(already implemented and tested; do not change it — request changes via STATUS file).
+The ratatui client in `crates/hertz-tui`; the first version shipped in v0.1.0. Open
+items: the band scope does not yet render the monitor role's spectrum correctly.
+
+**Normative reference for the waterfall pane: `plan/tui-waterfall-spec.md` (v1.0)** — implement it as written, with the adaptations
+in §Adaptations below. Wire protocol: `hertz-types/src/wire.rs`
+(already implemented and tested; do not change it).
 
 ## Your paths
 - `crates/hertz-tui/**` only. Workspace root Cargo.toml only for new
@@ -13,10 +15,8 @@ in §Adaptations below. Overall pane layout: PLAN §8. Wire protocol: `hertz-typ
 1. **`SpectrumFrame` source**: the spec's crossbeam producer is replaced by the daemon WS.
    A client task deserializes incoming spectrum frames into the spec's `SpectrumFrame` and
    `try_send`s into the same bounded(8) channel — W1 semantics preserved end-to-end.
-   NOTE: the daemon does not yet emit spectrum frames on the wire (queued as T4.1 for the
-   daemon owner). Until it does, the spec's REQUIRED `--demo` synthetic source (spec §8) is
-   the frame producer — build the whole waterfall against `--demo` and the seam makes the
-   WS source a drop-in later.
+   The daemon emits spectrum frames on `/stream` (`spectrum=all`); `--demo` remains the
+   synthetic source for tests (spec §8).
 2. **`UiCommand` sink**: spec's `cmd_tx` maps to daemon calls — `NudgeTune`/`SetTune` →
    `POST /api/dongles/{id}/tune`, `SetGain` → the tune endpoint's gain field. Same enum,
    HTTP behind it.
@@ -27,7 +27,7 @@ in §Adaptations below. Overall pane layout: PLAN §8. Wire protocol: `hertz-typ
    (§7), and ALL §8 acceptance tests (TestBackend, non-blocking, resize, NO_COLOR, TX
    overlay, tune command, ruler accuracy).
 
-## Beyond the waterfall (PLAN §8)
+## Beyond the waterfall
 - `hertz` binary, clap subcommands: `tui` (default), `status`, `doctor`, `records`, `tail`
   — the non-tui ones are thin REST printers. Flags: `--connect URL` (default
   http://localhost:9080), `--token` (or HERTZ_TOKEN).
@@ -42,5 +42,4 @@ in §Adaptations below. Overall pane layout: PLAN §8. Wire protocol: `hertz-typ
 
 ## Done means
 `cargo test -p hertz-tui` green including all spec §8 acceptance tests; `hertz tui --demo`
-renders the full layout with the swept-peak demo and TX gutter exercise; clippy clean;
-STATUS file updated.
+renders the full layout with the swept-peak demo and TX gutter exercise; clippy clean.

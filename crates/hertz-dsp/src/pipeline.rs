@@ -1,5 +1,5 @@
 //! The DSP pipeline — ported from `TransmissionState` in
-//! `plan/reference/gnosis-radio/src/pipeline/state.rs`.
+//! gnosis-radio `pipeline/state.rs`.
 //!
 //! This is the crown-jewels entropy squelch with hang counter, voice gate, fades,
 //! prebuffer, AFC, and noise-floor adaptation. The gnosis pipeline printed, logged,

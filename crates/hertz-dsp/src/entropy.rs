@@ -1,5 +1,5 @@
 //! RF-noise entropy pool — ported from `create_entropy_pool` / `harvest_entropy` in
-//! `plan/reference/gnosis-radio/src/pipeline/state.rs`.
+//! gnosis-radio `pipeline/state.rs`.
 //!
 //! ADC quantization noise makes the least significant bits of demodulated audio
 //! genuinely random. The pool is filled every frame and drained elsewhere (in gnosis

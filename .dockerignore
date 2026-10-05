@@ -1,7 +1,0 @@
-target/
-data/
-recordings/
-plan/reference/
-.git/
-.agents/
-.cargo/

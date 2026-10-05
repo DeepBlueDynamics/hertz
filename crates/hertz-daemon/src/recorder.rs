@@ -1,4 +1,4 @@
-//! Recorder task (PLAN §5 / T4 brief Step 2): subscribes to transmission jobs from
+//! Recorder task: subscribes to transmission jobs from
 //! the DSP bridges and writes a WAV per transmission under `data_dir/recordings/`
 //! via `hertz_dsp::recorder`, then emits `RecordingSaved` on the bus and appends a
 //! line to `data_dir/logs/events.log`. Transcription is called on each save (Phase 6

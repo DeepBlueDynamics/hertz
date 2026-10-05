@@ -1,4 +1,4 @@
-//! Signal classification — port of `plan/reference/gnosis-radio/src/pipeline/squelch.rs`.
+//! Signal classification — port of gnosis-radio `pipeline/squelch.rs`.
 //!
 //! Carried verbatim; the gnosis field-tuned thresholds are sacred.
 

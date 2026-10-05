@@ -1,4 +1,4 @@
-//! Channelizer — ported from `plan/reference/gnosis-radio/src/wideband.rs` DSP core.
+//! Channelizer — ported from gnosis-radio `wideband.rs` DSP core.
 //!
 //! Differences vs gnosis:
 //! - **Generic** over sample rate and decimation factor (`extract_channel`,

@@ -1,5 +1,5 @@
 //! Narrowband-FM demodulator — ported from `NFMDemod` in
-//! `plan/reference/gnosis-radio/src/pipeline/state.rs`.
+//! gnosis-radio `pipeline/state.rs`.
 //!
 //! Field-tuned constants (channel FIR, decimation, DC-block, LPF, normalize) are
 //! carried verbatim. The only change vs gnosis: input is `&[Complex32]` rather than
