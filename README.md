@@ -92,20 +92,23 @@ library and weights to `%LOCALAPPDATA%\whistle` (`~/.cache/whistle` on Unix):
 
 ```
 whistle.cact               16.9 MB   speech model
-3.1.0/libneedle3.dll        1.5 MB   needle engine
+3.3.1/libneedle3.dll        1.5 MB   needle engine
 ```
 
 Override with `WHISTLE_WEIGHTS`, `WHISTLE_LIB_PATH` or `WHISTLE_CACHE`. On CPU a
 3 s transmission transcribes in about 70 ms. `keywords` biases recognition toward
-call signs and vessel names.
+call signs and vessel names. `live = true` also prints words in the console as you
+talk, using Whistle's streaming mode (engine 3.3.1); routing still uses the full
+recording.
 
 ## Hyperia and ollaya (`hertz-relay`)
 
 `hertz-relay` connects hertz to the Hyperia terminal and the ollaya decision
 model. With a `[relay]` section in the config, hertzd routes each transcript to the
 Hyperia pane it names: say "Top Rabbit, come in, over" and ollaya picks Top Rabbit
-from the live pane list, and hertz `msg_send`s the transcript to it. Calls that
-name no pane are only logged. Setup and details: [docs/OPERATIONS.md](docs/OPERATIONS.md#5-relay-to-hyperia-panes).
+from the live pane list, and hertz `msg_send`s the transcript to it. Hyperia's
+rotating two-word call signs ("Quebec Lima") work too, and a sign stops working
+once it has been used on the air. Calls that name no pane are only logged. Setup and details: [docs/OPERATIONS.md](docs/OPERATIONS.md#5-relay-to-hyperia-panes).
 
 `hertz-panes` shows what ollaya sees:
 

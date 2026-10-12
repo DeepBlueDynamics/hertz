@@ -122,13 +122,15 @@ impl Daemon {
         let sp_tx = Arc::new(sp_tx);
 
         // Recorder (one for all dongles). Bridges send transmission jobs to it.
-        let transcriber = transcriber_for(&config);
+        // Pane names the relay keeps current; the transcriber biases toward them.
+        let live_keywords: crate::transcribe::LiveKeywords = Default::default();
+        let transcriber = transcriber_for(&config, Arc::clone(&live_keywords), &bus);
         let data_dir = std::path::PathBuf::from(&config.daemon.data_dir);
         let recorder =
             RecorderHandle::spawn(bus.clone(), data_dir.clone(), Arc::clone(&transcriber));
         crate::recorder::spawn_backfill(bus.clone(), transcriber, data_dir);
         if let Some(relay) = &config.relay {
-            crate::relay::spawn(&bus, relay);
+            crate::relay::spawn(&bus, relay, live_keywords);
         }
         let recorder_tx = recorder.tx.clone();
 
@@ -624,10 +626,18 @@ fn warn_out_of_span_channels(
 
 /// Pick the transcription engine from config. `whistle` runs Cactus Whistle on-device;
 /// anything else, or no section, disables transcription.
-fn transcriber_for(config: &DaemonConfig) -> Arc<dyn Transcriber> {
+fn transcriber_for(
+    config: &DaemonConfig,
+    live_keywords: crate::transcribe::LiveKeywords,
+    bus: &EventBus,
+) -> Arc<dyn Transcriber> {
     match &config.transcription {
         Some(t) if t.engine == "whistle" => {
-            WhistleTranscriber::spawn(&t.language, t.keywords.clone())
+            let w = WhistleTranscriber::spawn(&t.language, t.keywords.clone(), live_keywords);
+            if t.live {
+                crate::live::spawn(bus, Arc::clone(&w));
+            }
+            w
         }
         Some(t) => {
             warn!(

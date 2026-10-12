@@ -1,29 +1,81 @@
-//! Radio call → Hyperia pane. On each transcript, pull the live pane list, let
-//! ollaya pick the addressed pane (or "none"), and `msg_send` the transcript there
-//! as hertz's own agent identity. Unmatched calls are logged here, nothing is sent.
+//! Radio call → Hyperia pane. On each transcript, pull Hyperia's live radio call
+//! signs ("Quebec Lima") and pane names, let ollaya pick the one the caller used (or
+//! "none"), and deliver as hertz's own agent identity: by call sign with
+//! `radio_deliver` (which rotates the sign, so a sign heard on the air never works
+//! twice), or by pane name with `msg_send`. Signs only exist for panes already
+//! approved for hertz, so a new pane is reached by name first. Unmatched calls are
+//! logged here; nothing is sent.
 //!
 //! After a send, if the transcription service is up, the recording is
 //! re-transcribed there; when ollaya says that version heard something the
 //! on-device one missed, a follow-up goes to the same pane.
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use hertz_relay::hyperia::HyperiaClient;
+use hertz_relay::hyperia::{HyperiaClient, Pane};
 use hertz_relay::ollaya::OllayaClient;
-use hertz_relay::route::{route, Route};
+use hertz_relay::route::{pane_labels, pick_name, spoken_name, terminal_panes};
 use hertz_relay::verify::{adds_information, TranscriptionService};
 use hertz_types::{Event, RelayConfig};
 use tracing::{debug, info, warn};
 
 use crate::bus::EventBus;
+use crate::transcribe::LiveKeywords;
+
+/// How often the pane list is re-read for transcription keywords (Hyperia's advice:
+/// poll terminal_status every 2–5 s; it's cheap).
+const PANE_NAME_REFRESH: Duration = Duration::from_secs(5);
+
+/// Keep `live` set to the spoken names of the current terminal panes, so the
+/// on-device recognizer is biased toward exactly the names a caller can use
+/// ("Annual Echidna" instead of "Angel Economic").
+fn spawn_pane_name_poller(relay: Arc<Relay>, live: LiveKeywords) {
+    std::thread::Builder::new()
+        .name("relay-pane-names".into())
+        .spawn(move || loop {
+            // From the pane memory, so a momentary empty layout keeps the names,
+            // plus the live call signs (they rotate on every delivery).
+            let mut names: Vec<String> = relay
+                .panes()
+                .iter()
+                .map(|p| spoken_name(&p.name))
+                .chain(relay.callsigns())
+                .filter(|n| !n.is_empty())
+                .collect();
+            names.sort();
+            names.dedup();
+            if let Ok(mut cur) = live.write() {
+                if *cur != names {
+                    info!(
+                        "relay: transcription keywords now {} name(s): {}",
+                        names.len(),
+                        names.join(", ")
+                    );
+                    *cur = names;
+                }
+            }
+            std::thread::sleep(PANE_NAME_REFRESH);
+        })
+        .expect("spawn pane-name poller");
+}
 
 struct Relay {
     hyperia: HyperiaClient,
     ollaya: OllayaClient,
     verify: Option<TranscriptionService>,
     min_probability: f64,
+    /// Terminal panes by paneId, with when each was last seen in a layout.
+    seen: Mutex<HashMap<String, (Pane, Instant)>>,
 }
+
+/// A pane stays routable this long after it was last seen. Hyperia's pane list
+/// briefly came back empty or partial (it dropped every name for ~35 s), and a call
+/// in that gap scored "none" for a pane it named outright. A pane that is really
+/// gone just fails at msg_send, which is logged.
+const PANE_MEMORY: Duration = Duration::from_secs(60);
 
 /// One transcript to relay.
 struct Call {
@@ -39,9 +91,35 @@ impl Call {
     }
 }
 
+/// Where ollaya says a call goes.
+enum Dest {
+    /// A live radio call sign: delivered with `radio_deliver`.
+    Sign {
+        sign: String,
+        how: String,
+    },
+    /// A pane named outright: delivered with `msg_send`.
+    Pane {
+        pane: Pane,
+        how: String,
+    },
+    NoMatch {
+        best: String,
+        probability: f64,
+    },
+}
+
+/// A delivered call: who got it (for the log), the pane id for a follow-up, and
+/// Hyperia's delivery state.
+struct Sent {
+    to: String,
+    pane_id: Option<String>,
+    state: String,
+}
+
 /// Start the relay. Must be called inside the tokio runtime. A missing token file
 /// disables the relay with a warning.
-pub fn spawn(bus: &EventBus, cfg: &RelayConfig) {
+pub fn spawn(bus: &EventBus, cfg: &RelayConfig, live_keywords: LiveKeywords) {
     let token_path = expand_home(&cfg.token_file);
     let token = match std::fs::read_to_string(&token_path) {
         Ok(t) => t.trim().to_string(),
@@ -56,8 +134,10 @@ pub fn spawn(bus: &EventBus, cfg: &RelayConfig) {
         verify: (!cfg.verify_url.is_empty())
             .then(|| TranscriptionService::new(cfg.verify_url.clone(), cfg.verify_model.clone())),
         min_probability: cfg.min_probability,
+        seen: Mutex::new(HashMap::new()),
     });
     info!("relay: routing transcripts to Hyperia panes via ollaya");
+    spawn_pane_name_poller(Arc::clone(&relay), live_keywords);
 
     let mut rx = bus.subscribe_events();
     tokio::spawn(async move {
@@ -90,69 +170,181 @@ pub fn spawn(bus: &EventBus, cfg: &RelayConfig) {
 }
 
 impl Relay {
+    /// Refresh the pane memory from the live layout (if Hyperia answers), drop panes
+    /// unseen for PANE_MEMORY, and return what is left.
+    fn panes(&self) -> Vec<Pane> {
+        let fresh = match self.hyperia.layout() {
+            Ok(layout) => terminal_panes(&layout),
+            Err(e) => {
+                debug!("relay: pane list fetch failed: {e:#}");
+                Vec::new()
+            }
+        };
+        let now = Instant::now();
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        for p in fresh {
+            seen.insert(p.pane_id.clone(), (p, now));
+        }
+        seen.retain(|_, (_, at)| now.duration_since(*at) < PANE_MEMORY);
+        let mut panes: Vec<Pane> = seen.values().map(|(p, _)| p.clone()).collect();
+        panes.sort_by(|a, b| a.name.cmp(&b.name));
+        panes
+    }
+
+    /// The live call signs, or none when Hyperia has no radio support or refuses.
+    fn callsigns(&self) -> Vec<String> {
+        self.hyperia.radio_callsigns().unwrap_or_else(|e| {
+            debug!("relay: radio_callsigns unavailable: {e:#}");
+            Vec::new()
+        })
+    }
+
+    /// One ollaya question over the live call signs and the pane names together.
+    fn route(&self, text: &str) -> anyhow::Result<Dest> {
+        let signs = self.callsigns();
+        let panes = pane_labels(&self.panes());
+        let mut names = signs.clone();
+        names.extend(panes.keys().filter(|k| !signs.contains(k)).cloned());
+        let pick = pick_name(&names, &self.ollaya, text, self.min_probability)?;
+        let how = pick.how();
+        Ok(match pick.name {
+            Some(n) if signs.contains(&n) => Dest::Sign { sign: n, how },
+            Some(n) => match panes.get(&n) {
+                Some(pane) => Dest::Pane {
+                    pane: pane.clone(),
+                    how,
+                },
+                None => Dest::NoMatch {
+                    best: n,
+                    probability: pick.probability,
+                },
+            },
+            None => Dest::NoMatch {
+                best: pick.best,
+                probability: pick.probability,
+            },
+        })
+    }
+
+    /// Deliver to a routed destination.
+    fn send(&self, dest: &Dest, subject: &str, body: &str) -> anyhow::Result<Sent> {
+        match dest {
+            Dest::Sign { sign, how } => {
+                let reply = self.hyperia.radio_deliver(sign, subject, body)?;
+                Ok(Sent {
+                    to: format!("call sign {sign} ({how})"),
+                    pane_id: reply_target(&reply),
+                    state: summarize(&reply),
+                })
+            }
+            Dest::Pane { pane, how } => {
+                let reply = self.hyperia.msg_send(&pane.pane_id, subject, body)?;
+                Ok(Sent {
+                    to: format!("{} ({how})", pane.name),
+                    pane_id: Some(pane.pane_id.clone()),
+                    state: summarize(&reply),
+                })
+            }
+            Dest::NoMatch { .. } => Err(anyhow::anyhow!("no destination")),
+        }
+    }
+
     fn handle(&self, call: &Call) {
         let ch = &call.channel;
-        let pane = match route(
-            &self.hyperia,
-            &self.ollaya,
-            &call.text,
-            self.min_probability,
-        ) {
-            Ok(Route::Pane { pane, probability }) => {
-                let body = format!(
-                    "Radio call on Ch {ch} ({:.3} MHz), {}:\n\n{}",
-                    call.mhz,
-                    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
-                    call.text
-                );
-                match self.hyperia.msg_send(&pane.pane_id, &call.subject(), &body) {
-                    Ok(reply) => info!(
-                        "RELAY | Ch {ch} | -> {} (p={probability:.2}) | {}",
-                        pane.name,
-                        summarize(&reply)
-                    ),
-                    Err(e) => {
-                        warn!(
-                            "RELAY | Ch {ch} | -> {} | msg_send failed: {e:#}",
-                            pane.name
-                        );
-                        return;
-                    }
-                }
-                pane
-            }
-            Ok(Route::NoMatch { best, probability }) => {
+        let dest = match self.route(&call.text) {
+            Ok(Dest::NoMatch { best, probability }) => {
                 info!(
-                    "RELAY | Ch {ch} | can't find a pane for {:?} (best guess {best:?}, p={probability:.2})",
+                    "RELAY | Ch {ch} | can't find a call sign or pane for {:?} (best guess {best:?}, p={probability:.2})",
                     call.text
                 );
+                self.retry_with_server(call);
                 return;
             }
+            Ok(dest) => dest,
             Err(e) => {
                 warn!("RELAY | Ch {ch} | routing failed: {e:#}");
                 return;
             }
         };
-        self.double_check(call, &pane.pane_id, &pane.name);
+        let body = format!(
+            "Radio call on Ch {ch} ({:.3} MHz), {}:\n\n{}",
+            call.mhz,
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+            call.text
+        );
+        match self.send(&dest, &call.subject(), &body) {
+            Ok(sent) => {
+                info!("RELAY | Ch {ch} | -> {} | {}", sent.to, sent.state);
+                if let Some(pane_id) = &sent.pane_id {
+                    self.double_check(call, pane_id, &sent.to);
+                }
+            }
+            Err(e) => warn!("RELAY | Ch {ch} | delivery failed: {e:#}"),
+        }
+    }
+
+    /// The on-device transcript named no pane. Pane names are unusual words that
+    /// Whistle often mishears ("You're echinada" for "Annual Echidna"), so when the
+    /// transcription service is up, route its transcript instead. A match is sent
+    /// once, from the server text, with the on-device text alongside.
+    fn retry_with_server(&self, call: &Call) {
+        let ch = &call.channel;
+        let Some(server_text) = self.server_transcript(call) else {
+            return;
+        };
+        if server_text.is_empty() {
+            info!("RELAY | Ch {ch} | server transcript empty too; nothing sent");
+            return;
+        }
+        match self.route(&server_text) {
+            Ok(Dest::NoMatch { best, probability }) => info!(
+                "RELAY | Ch {ch} | server transcript {server_text:?} names no call sign or pane either (best guess {best:?}, p={probability:.2})"
+            ),
+            Ok(dest) => {
+                let body = format!(
+                    "Radio call on Ch {ch} ({:.3} MHz), {}:\n\n{server_text}\n\n(Routed from the transcription server's version. On-device transcript: {})",
+                    call.mhz,
+                    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+                    call.text
+                );
+                match self.send(&dest, &call.subject(), &body) {
+                    Ok(sent) => info!(
+                        "RELAY | Ch {ch} | server transcript {server_text:?} -> {} | {}",
+                        sent.to, sent.state
+                    ),
+                    Err(e) => warn!("RELAY | Ch {ch} | delivery failed: {e:#}"),
+                }
+            }
+            Err(e) => warn!("RELAY | Ch {ch} | routing server transcript failed: {e:#}"),
+        }
+    }
+
+    /// The transcription service's version of this call, or None when it is
+    /// disabled, down, or fails.
+    fn server_transcript(&self, call: &Call) -> Option<String> {
+        let ch = &call.channel;
+        let (Some(service), Some(wav)) = (&self.verify, &call.recording) else {
+            return None;
+        };
+        if !service.is_up() {
+            debug!("RELAY | Ch {ch} | transcription service down");
+            return None;
+        }
+        match service.transcribe(Path::new(wav)) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                warn!("RELAY | Ch {ch} | server transcription failed: {e:#}");
+                None
+            }
+        }
     }
 
     /// Second opinion after the send: re-transcribe on the service and follow up
     /// if it heard something the on-device transcript missed.
     fn double_check(&self, call: &Call, pane_id: &str, pane_name: &str) {
         let ch = &call.channel;
-        let (Some(service), Some(wav)) = (&self.verify, &call.recording) else {
+        let Some(server_text) = self.server_transcript(call) else {
             return;
-        };
-        if !service.is_up() {
-            debug!("RELAY | Ch {ch} | transcription service down; skipping double-check");
-            return;
-        }
-        let server_text = match service.transcribe(Path::new(wav)) {
-            Ok(t) => t,
-            Err(e) => {
-                warn!("RELAY | Ch {ch} | double-check transcription failed: {e:#}");
-                return;
-            }
         };
         match adds_information(&self.ollaya, &call.text, &server_text, self.min_probability) {
             Ok((true, p)) => {
@@ -192,6 +384,16 @@ fn summarize(reply: &str) -> String {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| reply.chars().take(160).collect())
+}
+
+/// The pane a delivery landed on (`operation.target` in Hyperia's reply), so a
+/// follow-up can reach it after its call sign has rotated.
+fn reply_target(reply: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(reply).ok()?;
+    v.pointer("/operation/target")
+        .or_else(|| v.get("target"))
+        .and_then(|t| t.as_str())
+        .map(str::to_string)
 }
 
 fn expand_home(path: &str) -> std::path::PathBuf {

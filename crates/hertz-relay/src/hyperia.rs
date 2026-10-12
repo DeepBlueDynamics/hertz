@@ -97,6 +97,32 @@ impl HyperiaClient {
         )
     }
 
+    /// The live two-word radio call signs ("Quebec Lima") of the panes this identity
+    /// may message. Hyperia only answers the radio agent (hertz-radio) and never says
+    /// which pane holds which sign.
+    pub fn radio_callsigns(&self) -> Result<Vec<String>> {
+        let text = self.call_tool("radio_callsigns", serde_json::json!({}))?;
+        let v: serde_json::Value = serde_json::from_str(&text).context("parse radio_callsigns")?;
+        Ok(v["callsigns"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Mail the pane holding `callsign` (normal consent rules) and rotate its sign,
+    /// so a sign heard on the air never works twice. Errors when no pane holds it.
+    /// Returns Hyperia's reply (operation JSON, `operation.target` = the pane).
+    pub fn radio_deliver(&self, callsign: &str, subject: &str, body: &str) -> Result<String> {
+        self.call_tool(
+            "radio_deliver",
+            serde_json::json!({ "callsign": callsign, "subject": subject, "body": body }),
+        )
+    }
+
     /// Invoke one Hyperia tool; returns its first text content block.
     fn call_tool(&self, name: &str, arguments: serde_json::Value) -> Result<String> {
         let mut req = ureq::post(&self.url)

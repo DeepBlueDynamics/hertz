@@ -5,7 +5,7 @@
 
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use tracing::{info, warn};
 
@@ -33,15 +33,24 @@ impl Transcriber for DisabledTranscriber {
 /// Cactus Whistle (`engine = "whistle"`), on-device via the `whistle` crate. The
 /// engine and ~17 MB weights are fetched on first use; a background thread loads
 /// them at boot so the first recording doesn't wait. The engine serializes calls.
+/// Words added to the recognizer's bias list at runtime, shared with whoever keeps
+/// them current (the relay fills it with the live Hyperia pane names).
+pub type LiveKeywords = Arc<RwLock<Vec<String>>>;
+
 pub struct WhistleTranscriber {
-    options: whistle::Options,
+    language: Option<whistle::Language>,
+    /// Fixed keywords from config.
+    keywords: Vec<String>,
+    /// Keywords that change while running (pane names), merged in per call.
+    live: LiveKeywords,
     engine: OnceLock<whistle::Whistle>,
 }
 
 impl WhistleTranscriber {
     /// `language`: "auto" (detect) or a code Whistle knows ("en", "de", ...).
     /// `keywords`: call signs, vessel names and channel names to bias toward.
-    pub fn spawn(language: &str, keywords: Vec<String>) -> Arc<Self> {
+    /// `live`: further keywords read at every transcription (e.g. pane names).
+    pub fn spawn(language: &str, keywords: Vec<String>, live: LiveKeywords) -> Arc<Self> {
         let language = match language {
             "" | "auto" => None,
             code => match whistle::Language::from_str(code) {
@@ -53,11 +62,9 @@ impl WhistleTranscriber {
             },
         };
         let t = Arc::new(Self {
-            options: whistle::Options {
-                language,
-                keywords,
-                word_timestamps: false,
-            },
+            language,
+            keywords,
+            live,
             engine: OnceLock::new(),
         });
         let preload = Arc::clone(&t);
@@ -72,7 +79,8 @@ impl WhistleTranscriber {
         t
     }
 
-    fn engine(&self) -> anyhow::Result<&whistle::Whistle> {
+    /// The loaded engine (shared with live transcription).
+    pub fn engine(&self) -> anyhow::Result<&whistle::Whistle> {
         if let Some(w) = self.engine.get() {
             return Ok(w);
         }
@@ -84,10 +92,29 @@ impl WhistleTranscriber {
     }
 }
 
+impl WhistleTranscriber {
+    /// Language plus the config keywords merged with the current live keywords.
+    pub fn options(&self) -> whistle::Options {
+        let mut keywords = self.keywords.clone();
+        if let Ok(live) = self.live.read() {
+            for k in live.iter() {
+                if !keywords.iter().any(|e| e.eq_ignore_ascii_case(k)) {
+                    keywords.push(k.clone());
+                }
+            }
+        }
+        whistle::Options {
+            language: self.language,
+            keywords,
+            word_timestamps: false,
+        }
+    }
+}
+
 impl Transcriber for WhistleTranscriber {
     fn transcribe(&self, wav_path: &Path) -> anyhow::Result<String> {
         let pcm = whistle::wav::read_16k_mono(wav_path)?;
-        let t = self.engine()?.transcribe_long(&pcm, &self.options)?;
+        let t = self.engine()?.transcribe_long(&pcm, &self.options())?;
         Ok(t.text.trim().to_string())
     }
     fn name(&self) -> &'static str {

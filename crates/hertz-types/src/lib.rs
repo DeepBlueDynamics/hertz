@@ -299,6 +299,10 @@ pub struct TranscriptionConfig {
     /// Words to bias recognition toward: call signs, vessel names, channel names.
     #[serde(default)]
     pub keywords: Vec<String>,
+    /// Stream audio to the recognizer while a squelch is open and log words live
+    /// (display only; routing uses the whole recording's transcript).
+    #[serde(default)]
+    pub live: bool,
     pub cleanup: Option<CleanupConfig>,
 }
 

@@ -18,6 +18,11 @@ cargo build --release -p hertz-daemon
   disappears (unplugged, monitor asleep), the speaker reopens on the current
   default device every 2 s.
 - `--mock` runs with a synthetic dongle to exercise the network surface.
+- With `live = true` under `[transcription]`, words are logged as you talk
+  (`LIVE | Ch 72 | ...`, about one line a second, `[end]` at unkey) using
+  Whistle's streaming mode (needle engine 3.3.1). Display only: routing still uses
+  the whole recording's transcript, which got a 37 s call's opening call-up right
+  where the live stream did not, at a tenth of the CPU.
 - Stop with Ctrl-C. Windows keeps a running `hertzd.exe` locked, so stop it before
   `cargo build` or `cargo clean`.
 
@@ -141,6 +146,40 @@ differs trivially. If it adds something, a follow-up goes to the same pane with
 subject `Re: [radio] Ch 72 156.625 MHz`, the server transcript and the original.
 The check never delays the first message, is skipped while the service is down,
 and is turned off with `verify_url = ""`.
+
+**Pane names as keywords.** With the relay on, hertzd re-reads the pane list every
+5 s and adds the current names (emoji removed) to Whistle's keyword list, so the
+on-device model is biased toward exactly the names you can call. On four missed
+calls to "Annual Echidna" this alone fixed two ("Angel Economic" became "Annual
+Echidna"). The console logs `transcription keywords now N pane name(s): ...` when
+the list changes.
+
+**Retry on a miss.** Pane names are unusual words that the on-device model often
+mishears ("You're echinada" for "Annual Echidna"). When the on-device transcript
+names no pane and the transcription service is up, hertzd routes the server's
+transcript instead and, on a match, sends that version once (with the on-device
+text alongside). The console logs `server transcript "..." -> <pane>` or
+`names no pane either`.
+
+ollaya reads each pane as "The speaker is calling <name> by name", with emoji
+removed from the name (an emoji at the end of a name cut a clean call's score from
+1.00 to 0.38). Answers still map back to the exact pane.
+
+**Radio call signs.** Hyperia gives every agent pane that hertz may message a
+random two-word NATO call sign ("Quebec Lima"), shown as a gold badge on the pane
+while the radio is in use. hertzd asks ollaya about the live call signs and the
+pane names in one question. A call sign match is delivered with `radio_deliver`,
+which rotates that pane's sign, so a sign heard on the air never works twice. A pane
+name match goes out with `msg_send` as before. Signs only exist for panes already
+approved for hertz, so the first call to a new pane uses its name. The current signs
+are added to Whistle's keywords too.
+
+**Second chance on a weak pick.** With a dozen names and signs in play, a call that
+says a name once can still win at only 0.3 ("Kidna, Annual Echidna, come back.").
+When the top pick is a name but scores under `min_probability`, ollaya is asked
+about that name alone (calling it or not), and the call is routed if that clears
+0.4. On 14 labelled calls, calls naming the pane scored 0.34–0.92 on this check and
+calls naming none 0.06–0.30. The log shows both: `(p=0.31, confirm 0.57)`.
 
 Only live transmissions are relayed; transcripts made for old recordings at
 startup are not.

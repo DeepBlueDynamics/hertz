@@ -15,9 +15,9 @@ fn main() -> anyhow::Result<()> {
     let ollaya = OllayaClient::from_env();
     for transcript in std::env::args().skip(1) {
         match route(&hyperia, &ollaya, &transcript, 0.5)? {
-            Route::Pane { pane, probability } => {
+            Route::Pane { pane, how } => {
                 println!(
-                    "{transcript:?}\n  -> {} [{}] p={probability:.3}",
+                    "{transcript:?}\n  -> {} [{}] {how}",
                     pane.name, pane.pane_id
                 )
             }
