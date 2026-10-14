@@ -9,6 +9,9 @@
 //! After a send, if the transcription service is up, the recording is
 //! re-transcribed there; when ollaya says that version heard something the
 //! on-device one missed, a follow-up goes to the same pane.
+//!
+//! With live transcription on, the call's live-stream text rides along when its
+//! words differ, and is routed in turn when the full-recording text names no one.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,6 +26,7 @@ use hertz_types::{Event, RelayConfig};
 use tracing::{debug, info, warn};
 
 use crate::bus::EventBus;
+use crate::live::LiveTranscripts;
 use crate::transcribe::LiveKeywords;
 
 /// How often the pane list is re-read for transcription keywords (Hyperia's advice:
@@ -69,7 +73,15 @@ struct Relay {
     min_probability: f64,
     /// Terminal panes by paneId, with when each was last seen in a layout.
     seen: Mutex<HashMap<String, (Pane, Instant)>>,
+    /// Each channel's finished live-stream transcript (empty when live is off).
+    live: LiveTranscripts,
 }
+
+/// The live transcript of a call is kept until the full-recording transcript
+/// arrives; it finishes on squelch close, usually before that. Wait at most this
+/// long for it, and ignore one older than LIVE_MAX_AGE (from an earlier call).
+const LIVE_WAIT: Duration = Duration::from_secs(2);
+const LIVE_MAX_AGE: Duration = Duration::from_secs(10);
 
 /// A pane stays routable this long after it was last seen. Hyperia's pane list
 /// briefly came back empty or partial (it dropped every name for ~35 s), and a call
@@ -119,7 +131,12 @@ struct Sent {
 
 /// Start the relay. Must be called inside the tokio runtime. A missing token file
 /// disables the relay with a warning.
-pub fn spawn(bus: &EventBus, cfg: &RelayConfig, live_keywords: LiveKeywords) {
+pub fn spawn(
+    bus: &EventBus,
+    cfg: &RelayConfig,
+    live_keywords: LiveKeywords,
+    live_transcripts: LiveTranscripts,
+) {
     let token_path = expand_home(&cfg.token_file);
     let token = match std::fs::read_to_string(&token_path) {
         Ok(t) => t.trim().to_string(),
@@ -135,6 +152,7 @@ pub fn spawn(bus: &EventBus, cfg: &RelayConfig, live_keywords: LiveKeywords) {
             .then(|| TranscriptionService::new(cfg.verify_url.clone(), cfg.verify_model.clone())),
         min_probability: cfg.min_probability,
         seen: Mutex::new(HashMap::new()),
+        live: live_transcripts,
     });
     info!("relay: routing transcripts to Hyperia panes via ollaya");
     spawn_pane_name_poller(Arc::clone(&relay), live_keywords);
@@ -249,14 +267,41 @@ impl Relay {
         }
     }
 
+    /// The live-stream transcript of the call just finished on `channel`, if it
+    /// differs from the full-recording one in its words.
+    fn live_text(&self, call: &Call) -> Option<String> {
+        let deadline = Instant::now() + LIVE_WAIT;
+        loop {
+            {
+                let mut m = self.live.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some((text, at)) = m.remove(&call.channel) {
+                    if at.elapsed() > LIVE_MAX_AGE || words(&text) == words(&call.text) {
+                        return None;
+                    }
+                    return Some(text);
+                }
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     fn handle(&self, call: &Call) {
         let ch = &call.channel;
+        let live = self.live_text(call);
         let dest = match self.route(&call.text) {
             Ok(Dest::NoMatch { best, probability }) => {
                 info!(
                     "RELAY | Ch {ch} | can't find a call sign or pane for {:?} (best guess {best:?}, p={probability:.2})",
                     call.text
                 );
+                if let Some(live) = &live {
+                    if self.retry_with_live(call, live) {
+                        return;
+                    }
+                }
                 self.retry_with_server(call);
                 return;
             }
@@ -266,12 +311,17 @@ impl Relay {
                 return;
             }
         };
-        let body = format!(
+        let mut body = format!(
             "Radio call on Ch {ch} ({:.3} MHz), {}:\n\n{}",
             call.mhz,
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
             call.text
         );
+        if let Some(live) = &live {
+            body.push_str(&format!(
+                "\n\n(Live transcript, heard while the caller talked: {live})"
+            ));
+        }
         match self.send(&dest, &call.subject(), &body) {
             Ok(sent) => {
                 info!("RELAY | Ch {ch} | -> {} | {}", sent.to, sent.state);
@@ -280,6 +330,45 @@ impl Relay {
                 }
             }
             Err(e) => warn!("RELAY | Ch {ch} | delivery failed: {e:#}"),
+        }
+    }
+
+    /// The full-recording transcript named no one; route the live-stream one, which
+    /// sometimes hears the call-up the full pass missed. True when it was sent.
+    fn retry_with_live(&self, call: &Call, live: &str) -> bool {
+        let ch = &call.channel;
+        match self.route(live) {
+            Ok(Dest::NoMatch { best, probability }) => {
+                info!(
+                    "RELAY | Ch {ch} | live transcript {live:?} names no call sign or pane either (best guess {best:?}, p={probability:.2})"
+                );
+                false
+            }
+            Ok(dest) => {
+                let body = format!(
+                    "Radio call on Ch {ch} ({:.3} MHz), {}:\n\n{live}\n\n(Routed from the live transcript. Full-recording transcript: {})",
+                    call.mhz,
+                    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+                    call.text
+                );
+                match self.send(&dest, &call.subject(), &body) {
+                    Ok(sent) => {
+                        info!(
+                            "RELAY | Ch {ch} | live transcript {live:?} -> {} | {}",
+                            sent.to, sent.state
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        warn!("RELAY | Ch {ch} | delivery failed: {e:#}");
+                        false
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("RELAY | Ch {ch} | routing live transcript failed: {e:#}");
+                false
+            }
         }
     }
 
@@ -369,6 +458,14 @@ impl Relay {
             Err(e) => warn!("RELAY | Ch {ch} | double-check compare failed: {e:#}"),
         }
     }
+}
+
+/// Lowercase words without punctuation, to compare two transcripts.
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
 }
 
 /// Hyperia's msg_send reply is JSON; surface its state (queued, delivered,

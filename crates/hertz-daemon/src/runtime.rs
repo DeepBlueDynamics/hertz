@@ -124,13 +124,19 @@ impl Daemon {
         // Recorder (one for all dongles). Bridges send transmission jobs to it.
         // Pane names the relay keeps current; the transcriber biases toward them.
         let live_keywords: crate::transcribe::LiveKeywords = Default::default();
-        let transcriber = transcriber_for(&config, Arc::clone(&live_keywords), &bus);
+        let live_transcripts: crate::live::LiveTranscripts = Default::default();
+        let transcriber = transcriber_for(
+            &config,
+            Arc::clone(&live_keywords),
+            &bus,
+            Arc::clone(&live_transcripts),
+        );
         let data_dir = std::path::PathBuf::from(&config.daemon.data_dir);
         let recorder =
             RecorderHandle::spawn(bus.clone(), data_dir.clone(), Arc::clone(&transcriber));
         crate::recorder::spawn_backfill(bus.clone(), transcriber, data_dir);
         if let Some(relay) = &config.relay {
-            crate::relay::spawn(&bus, relay, live_keywords);
+            crate::relay::spawn(&bus, relay, live_keywords, live_transcripts);
         }
         let recorder_tx = recorder.tx.clone();
 
@@ -630,12 +636,13 @@ fn transcriber_for(
     config: &DaemonConfig,
     live_keywords: crate::transcribe::LiveKeywords,
     bus: &EventBus,
+    live_transcripts: crate::live::LiveTranscripts,
 ) -> Arc<dyn Transcriber> {
     match &config.transcription {
         Some(t) if t.engine == "whistle" => {
             let w = WhistleTranscriber::spawn(&t.language, t.keywords.clone(), live_keywords);
             if t.live {
-                crate::live::spawn(bus, Arc::clone(&w));
+                crate::live::spawn(bus, Arc::clone(&w), live_transcripts);
             }
             w
         }
