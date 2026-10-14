@@ -4,3 +4,4 @@ data/
 *.wav
 !**/fixtures/**/*.wav
 !**/fixtures/*.wav
+.package-cli/

@@ -2,7 +2,7 @@
 
 A multi-dongle RTL-SDR radio receiver in Rust, tuned for marine VHF. `hertzd` owns
 the dongles, demodulates NFM/AM, runs a squelch, records each transmission to WAV,
-transcribes it on-device with [Cactus Whistle](../forest/whistle), and serves
+transcribes it on-device with [Cactus Whistle](crates/whistle), and serves
 everything over REST, WebSocket and SSE. `hertz` is the terminal client.
 
 ## Quick start (Windows, native)
@@ -87,7 +87,7 @@ ham 2 m/70 cm, CB, airband, railroad and public-safety interop) load from
 ## Transcription (Cactus Whistle)
 
 Whistle is a 16.9 MB on-device recognizer for 7 languages, used through the
-`whistle` crate in `../forest/whistle`. On first use it downloads the engine
+`whistle` crate in `crates/whistle`. On first use it downloads the engine
 library and weights to `%LOCALAPPDATA%\whistle` (`~/.cache/whistle` on Unix):
 
 ```
@@ -149,9 +149,6 @@ bandwidth settings.
 
 ## Known limitations
 
-- **Whistle checkout.** `hertz-daemon` depends on `whistle` by path
-  (`../forest/whistle`), so building needs that checkout next to this repo until
-  whistle is vendored or published.
 - **Gain.** The pure-Rust driver's manual gain pins the tuner VGA at 16.3 dB,
   about 10 dB below librtlsdr's, so dongles run on tuner AGC.
 - **Hopscan** is not implemented, and the TUI's band scope does not render the

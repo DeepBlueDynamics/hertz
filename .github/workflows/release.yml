@@ -1,0 +1,275 @@
+name: Release
+
+# Build hertzd and hertz for every supported platform, publish one GitHub Release
+# with SHA256SUMS, then publish @deepbluedynamics/hertz and its per-platform
+# packages to npm. Ported from Lume's release.yml.
+#
+# Triggers:
+# - a pushed `v*` tag (must match [workspace.package] version in Cargo.toml);
+# - manually, against an existing tag;
+# - from bump-version.yml, which bumps, commits, tags and then calls this
+#   workflow (a tag pushed with GITHUB_TOKEN does not start other workflows).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v0.3.0)"
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build and release"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  check:
+    name: Check tag matches Cargo.toml
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Compare versions
+        id: version
+        run: |
+          cargo_version="$(cargo pkgid -p hertz-daemon | sed 's/.*[#@]//')"
+          cli_version="$(node -p "require('./npm/hertz/package.json').version")"
+          echo "tag=$TAG cargo=$cargo_version npm=$cli_version"
+          if [ "${TAG#v}" != "$cargo_version" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $cargo_version"
+            exit 1
+          fi
+          if [ "$cli_version" != "$cargo_version" ]; then
+            echo "::error::npm/hertz package.json version $cli_version does not match $cargo_version"
+            exit 1
+          fi
+          test -f LICENSE || { echo "::error::no LICENSE file; npm packages need one"; exit 1; }
+          echo "version=$cargo_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.target }}
+    needs: check
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux runners are pinned to 22.04 (glibc 2.35): HaLOS allows
+          # glibc <= 2.39, and ubuntu-latest would move past it.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu # Raspberry Pi
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    env:
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.tag }}
+
+      - name: Install ALSA and udev headers (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build hertzd and hertz
+        run: cargo build --release --locked --bin hertzd --bin hertz --target ${{ matrix.target }}
+
+      - name: Collect binaries
+        shell: bash
+        run: |
+          ext="${{ runner.os == 'Windows' && '.exe' || '' }}"
+          mkdir -p bins
+          for p in hertzd hertz; do cp "target/${{ matrix.target }}/release/$p$ext" bins/; done
+          if [ "${{ runner.os }}" != "Windows" ]; then strip bins/hertzd bins/hertz || true; fi
+          ls -l bins
+
+      - name: Check glibc floor (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          for bin in bins/hertzd bins/hertz; do
+            newest="$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+            echo "$bin newest glibc symbol: $newest"
+            if [ "$(printf '%s\nGLIBC_2.39\n' "$newest" | sort -V | tail -1)" != "GLIBC_2.39" ]; then
+              echo "::error::$bin needs $newest; HaLOS allows at most GLIBC_2.39"
+              exit 1
+            fi
+          done
+
+      - name: Smoke test
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          ext="${{ runner.os == 'Windows' && '.exe' || '' }}"
+          bins/hertzd$ext --version
+          bins/hertz$ext --version
+
+      - name: Archive
+        shell: bash
+        run: |
+          name="hertz-$TAG-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp bins/* README.md LICENSE hertz.example.toml "dist/$name/"
+          cp -r bandplans "dist/$name/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            (cd dist && 7z a "$name.zip" "$name" > /dev/null)
+          else
+            tar -czf "dist/$name.tar.gz" -C dist "$name"
+          fi
+          rm -rf "dist/$name"
+
+      - name: Upload binaries for the npm packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.target }}
+          path: bins/*
+          retention-days: 3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          retention-days: 3
+
+  package:
+    name: npm packages
+    needs: [check, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/download-artifact@v4
+        with: { name: bin-x86_64-unknown-linux-gnu, path: bins/linux-x64 }
+      - uses: actions/download-artifact@v4
+        with: { name: bin-aarch64-unknown-linux-gnu, path: bins/linux-arm64 }
+      - uses: actions/download-artifact@v4
+        with: { name: bin-aarch64-apple-darwin, path: bins/darwin-arm64 }
+      - uses: actions/download-artifact@v4
+        with: { name: bin-x86_64-apple-darwin, path: bins/darwin-x64 }
+      - uses: actions/download-artifact@v4
+        with: { name: bin-x86_64-pc-windows-msvc, path: bins/win32-x64 }
+
+      - name: Build npm tarballs
+        run: |
+          node scripts/package-cli.cjs --linux-x64 bins/linux-x64 --linux-arm64 bins/linux-arm64 \
+            --darwin-arm64 bins/darwin-arm64 --darwin-x64 bins/darwin-x64 \
+            --win32-x64 bins/win32-x64 --output cli-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-cli
+          path: cli-dist/*.tgz
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    name: Publish GitHub Release
+    needs: [check, build, package]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check.outputs.tag }}
+          name: Hertz ${{ needs.check.outputs.tag }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+  # npm trusted publishing (OIDC, no stored token). Each package lists both
+  # bump-version.yml and release.yml as trusted publishers. Platform packages go
+  # before the wrapper, so its optional dependencies exist when it appears.
+  # Already-published versions are skipped, so a rerun finishes a partial publish.
+  npm:
+    name: Publish to npm
+    needs: [check, release]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install npm with trusted publishing
+        run: npm install -g npm@11.6.2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-cli
+          path: npm
+
+      - name: Publish binaries, then the wrapper
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -uo pipefail
+          for name in @deepbluedynamics/hertz-linux-x64 @deepbluedynamics/hertz-linux-arm64 \
+              @deepbluedynamics/hertz-darwin-arm64 @deepbluedynamics/hertz-darwin-x64 \
+              @deepbluedynamics/hertz-win32-x64 @deepbluedynamics/hertz; do
+            if [ -n "$(npm view "$name@$VERSION" version 2>/dev/null)" ]; then
+              echo "$name@$VERSION is already on npm"
+              continue
+            fi
+            file="$(printf '%s' "$name" | sed 's#^@##; s#/#-#')-$VERSION.tgz"
+            # ./ keeps npm from reading "npm/<file>" as a GitHub shorthand.
+            if ! npm publish "./npm/$file" --access public; then
+              echo "::error::npm refused $name@$VERSION; not publishing the rest (the wrapper would point at a missing binary)"
+              exit 1
+            fi
+          done

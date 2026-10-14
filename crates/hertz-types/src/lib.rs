@@ -262,8 +262,9 @@ pub struct DaemonSettings {
     pub auth_token: Option<String>,
 }
 
+/// This machine only. Serving the LAN (`0.0.0.0:9080`) is an explicit choice in the config.
 fn default_listen() -> String {
-    "0.0.0.0:9080".to_string()
+    "127.0.0.1:9080".to_string()
 }
 
 fn default_data_dir() -> String {
@@ -409,6 +410,11 @@ impl DaemonConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_listen_is_loopback() {
+        assert!(default_listen().starts_with("127.0.0.1:"));
+    }
 
     #[test]
     fn test_daemon_config_parses() {

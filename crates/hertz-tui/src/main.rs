@@ -32,7 +32,11 @@ use hertz_types::{
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Parser, Debug)]
-#[command(name = "hertz", about = "Hertz SDR Operator Console & CLI tool")]
+#[command(
+    name = "hertz",
+    version,
+    about = "Hertz SDR Operator Console & CLI tool"
+)]
 struct Cli {
     #[arg(long, default_value = "http://localhost:9080")]
     connect: String,

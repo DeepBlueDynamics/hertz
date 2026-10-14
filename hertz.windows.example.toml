@@ -15,7 +15,7 @@ scan = ["68", "69", "71", "72"]
 squelch_db = 6.0
 record = true
 
-# Cactus Whistle on-device speech recognition (forest/whistle). The engine and
+# Cactus Whistle on-device speech recognition (crates/whistle). The engine and
 # ~17 MB weights download once to %LOCALAPPDATA%\whistle.
 # Transcripts land in data/transcriptions/<recording>.txt.
 [transcription]

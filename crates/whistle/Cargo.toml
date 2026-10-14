@@ -1,0 +1,24 @@
+[package]
+name = "whistle"
+version = "0.1.0"
+edition = "2021"
+description = "Rust bindings for Cactus Whistle on-device speech recognition (needle engine C ABI)"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = ["wav", "fetch"]
+# Read 16-bit / float WAV files into 16 kHz mono f32.
+wav = ["dep:hound"]
+# Download the engine library and whistle.cact from Hugging Face into a local cache.
+fetch = ["dep:ureq", "dep:zip"]
+
+[dependencies]
+libloading = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+hound = { version = "3.5", optional = true }
+ureq = { version = "2", optional = true }
+zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
+
