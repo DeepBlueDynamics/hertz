@@ -26,7 +26,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -88,6 +88,7 @@ jobs:
     env:
       CARGO_PROFILE_RELEASE_LTO: thin
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+      CARGO_PROFILE_RELEASE_STRIP: symbols
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,7 +117,6 @@ jobs:
           ext="${{ runner.os == 'Windows' && '.exe' || '' }}"
           mkdir -p bins
           for p in hertzd hertz; do cp "target/${{ matrix.target }}/release/$p$ext" bins/; done
-          if [ "${{ runner.os }}" != "Windows" ]; then strip bins/hertzd bins/hertz || true; fi
           ls -l bins
 
       - name: Check glibc floor (Linux)
@@ -130,6 +130,43 @@ jobs:
               exit 1
             fi
           done
+
+      # The runner has the -dev packages, so a smoke test there can't catch a
+      # library missing on a bare Pi. Allow only what Raspberry Pi OS and HaLOS
+      # ship, then run --version in a bare Debian with just those installed.
+      - name: Check shared libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          allowed='^(libc\.so\.6|libm\.so\.6|libgcc_s\.so\.1|libpthread\.so\.0|libdl\.so\.2|librt\.so\.1|ld-linux.*|libasound\.so\.2|libudev\.so\.1)$'
+          for bin in bins/hertzd bins/hertz; do
+            needed="$(readelf -d "$bin" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p')"
+            echo "$bin needs:"; echo "$needed" | sed 's/^/  /'
+            bad="$(echo "$needed" | grep -Ev "$allowed" || true)"
+            if [ -n "$bad" ]; then
+              echo "::error::$bin needs libraries outside the allowlist: $bad"
+              exit 1
+            fi
+          done
+
+      - name: Run in bare Debian bookworm (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD/bins:/b:ro" debian:bookworm-slim sh -c \
+            'apt-get update -qq && apt-get install -y -qq libasound2 libudev1 > /dev/null && /b/hertzd --version && /b/hertz --version'
+
+      # Cross-built on the arm64 runner: check the architecture, then run it
+      # under Rosetta.
+      - name: Check architecture (macOS Intel)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          for bin in bins/hertzd bins/hertz; do
+            archs="$(lipo -archs "$bin")"
+            echo "$bin: $archs"
+            [ "$archs" = "x86_64" ] || { echo "::error::$bin is $archs, expected x86_64"; exit 1; }
+          done
+          softwareupdate --install-rosetta --agree-to-license > /dev/null 2>&1 || true
+          arch -x86_64 bins/hertzd --version
+          arch -x86_64 bins/hertz --version
 
       - name: Smoke test
         if: matrix.target != 'x86_64-apple-darwin'
@@ -209,6 +246,8 @@ jobs:
     needs: [check, build, package]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

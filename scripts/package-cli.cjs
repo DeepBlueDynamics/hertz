@@ -47,6 +47,8 @@ function checkBinary(file, target) {
     if (read < 20 || header.toString('latin1', 0, 4) !== '\x7fELF' || header[4] !== 2) {
       throw new Error(file + ': expected a 64-bit ELF executable');
     }
+    // ET_EXEC or ET_DYN (PIE); not an object file or core dump.
+    if (![2, 3].includes(header.readUInt16LE(16))) throw new Error(file + ': ELF file is not an executable');
     const machine = {'linux-x64': 0x3e, 'linux-arm64': 0xb7}[target];
     if (header.readUInt16LE(18) !== machine) throw new Error(file + ': ELF architecture does not match ' + target);
     return;

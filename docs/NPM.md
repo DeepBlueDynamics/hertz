@@ -41,10 +41,36 @@ Pushing a `v*` tag by hand runs `release.yml` alone.
    then `npm login` (browser and security key, in a real terminal) and
    `npm publish ./<file>.tgz --access public` for all six tarballs, platform
    packages first.
-3. **Trusted publishers.** On npmjs.com, for each of the six packages, under
-   Settings → Trusted publishing → GitHub Actions, add owner `DeepBlueDynamics`,
-   repo `hertz`, and both workflows: `bump-version.yml` and `release.yml`, with
-   the environment left empty. A mismatch fails with E404, not 403.
+3. **Trusted publishers.** The first CI publish fails with E404 until this is
+   done. For each of the six packages, trust both workflows. npm checks the
+   calling workflow, which is `bump-version.yml` when it starts the release:
+
+   ```sh
+   for pkg in hertz hertz-linux-x64 hertz-linux-arm64 hertz-darwin-arm64 hertz-darwin-x64 hertz-win32-x64; do
+     for file in bump-version.yml release.yml; do
+       npx npm@12 trust github "@deepbluedynamics/$pkg" --file "$file" --repo DeepBlueDynamics/hertz --allow-publish -y
+     done
+     npx npm@12 trust list "@deepbluedynamics/$pkg"
+   done
+   ```
+
+   Or use npmjs.com → package → Settings → Trusted publishing, with owner
+   `DeepBlueDynamics`, repo `hertz`, and the environment left empty. Check the
+   file names character by character: a mismatch fails with E404, not 403. Lume
+   lost a release to `bump-verion.yml`.
+
+## Running hertzd as a service
+
+The `hertzd` command on your PATH is a Node launcher. It forwards SIGTERM and
+SIGHUP to the real binary, but a service should start the binary directly, so
+nothing sits between systemd and the process holding the dongle:
+
+```sh
+node -p "require('path').join(require('path').dirname(require.resolve('@deepbluedynamics/hertz-linux-arm64/package.json', {paths: [require('child_process').execSync('npm root -g').toString().trim()]})), 'bin/hertzd')"
+```
+
+Use that path in `ExecStart=`, and set `Environment=HERTZ_BANDPLANS=` to the
+wrapper's `bandplans/` directory.
 
 ## On the Pi
 

@@ -30,10 +30,12 @@ offline.
 
 ## Linux and Raspberry Pi: one-time USB setup
 
-npm can't do this part. Stop the kernel's TV driver from claiming the dongle, and
-allow your user to open it:
+npm can't do this part. Install the two system libraries hertz uses (most Pi
+images already have them), stop the kernel's TV driver from claiming the dongle,
+and allow your user to open it:
 
 ```sh
+sudo apt install libasound2 libudev1
 echo 'blacklist dvb_usb_rtl28xxu' | sudo tee /etc/modprobe.d/blacklist-rtlsdr.conf
 sudo curl -o /etc/udev/rules.d/60-hertz-rtlsdr.rules \
   https://raw.githubusercontent.com/DeepBlueDynamics/hertz/main/docs/60-hertz-rtlsdr.rules

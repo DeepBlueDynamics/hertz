@@ -4,7 +4,7 @@
 // and the exit status. hertzd finds the band plans shipped with this package
 // unless HERTZ_BANDPLANS is already set.
 const path = require('node:path');
-const {spawnSync} = require('node:child_process');
+const {spawn} = require('node:child_process');
 
 const SUPPORTED = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64'];
 
@@ -23,11 +23,23 @@ module.exports = function run(program) {
   }
   const env = {...process.env};
   if (!env.HERTZ_BANDPLANS) env.HERTZ_BANDPLANS = path.join(__dirname, '..', 'bandplans');
-  const result = spawnSync(binary, process.argv.slice(2), {stdio: 'inherit', env});
-  if (result.error) {
-    console.error(program + ': could not run ' + binary + ': ' + result.error.message);
-    process.exit(1);
+  const child = spawn(binary, process.argv.slice(2), {stdio: 'inherit', env});
+  // A supervisor that signals only this process (kill <pid>) must still stop
+  // hertzd, or it keeps running and holds the dongle. Ctrl-C already reaches the
+  // child through the terminal, so SIGINT is ignored here rather than sent twice.
+  process.on('SIGINT', () => {});
+  for (const signal of ['SIGTERM', 'SIGHUP']) {
+    process.on(signal, () => { if (child.exitCode === null) child.kill(signal); });
   }
-  if (result.signal) process.kill(process.pid, result.signal);
-  process.exit(result.status ?? 1);
+  child.on('error', error => {
+    console.error(program + ': could not run ' + binary + ': ' + error.message);
+    process.exit(1);
+  });
+  child.on('exit', (code, signal) => {
+    if (signal) {
+      process.removeAllListeners(signal);
+      process.kill(process.pid, signal);
+    }
+    process.exit(code ?? 1);
+  });
 };
