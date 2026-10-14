@@ -26,7 +26,8 @@ module.exports = function run(program) {
   const child = spawn(binary, process.argv.slice(2), {stdio: 'inherit', env});
   // A supervisor that signals only this process (kill <pid>) must still stop
   // hertzd, or it keeps running and holds the dongle. Ctrl-C already reaches the
-  // child through the terminal, so SIGINT is ignored here rather than sent twice.
+  // child through the terminal, so SIGINT is ignored here rather than sent twice
+  // (an external `kill -INT <node pid>` therefore doesn't reach hertzd; use TERM).
   process.on('SIGINT', () => {});
   for (const signal of ['SIGTERM', 'SIGHUP']) {
     process.on(signal, () => { if (child.exitCode === null) child.kill(signal); });
