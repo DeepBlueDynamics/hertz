@@ -6,8 +6,10 @@
 //!   state (e.g. which pane a radio call addresses, or which pane is active).
 //! - [`route`]: radio transcript → the Hyperia pane ollaya says it addresses.
 //! - [`verify`]: second-opinion transcription and an ollaya "did it add anything" check.
+//! - [`sounds`]: spots a misheard name that sounds like one the speaker could be calling.
 
 pub mod hyperia;
 pub mod ollaya;
 pub mod route;
+pub mod sounds;
 pub mod verify;

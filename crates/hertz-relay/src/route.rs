@@ -110,7 +110,8 @@ impl Pick {
 }
 
 /// Ask ollaya which of `names` the transcript calls, with an explicit "none of
-/// these" option. Only the model decides; nothing is string-matched.
+/// these" option. The model decides, but only among names the transcript says or
+/// sounds like.
 pub fn pick_name(
     names: &[String],
     ollaya: &OllayaClient,
@@ -146,7 +147,22 @@ pub fn pick_name(
     let mut questions = BTreeMap::new();
     questions.insert("pane".to_string(), criteria);
 
-    let state = serde_json::Value::String(format!("Radio call transcript: {transcript:?}"));
+    // A misheard name ("Stables arena") is invisible to ollaya, which reads text, not
+    // sound. When the call-up has a strict sound-alike of a whole name, say so.
+    let spoken: Vec<String> = names.iter().map(|n| spoken_name(n)).collect();
+    let mut state = format!("Radio call transcript: {transcript:?}");
+    let hint = crate::sounds::sounds_like(transcript, &spoken);
+    // The option label of the sounds-like name, for a second chance below.
+    let hinted: Option<String> = hint
+        .as_ref()
+        .and_then(|h| names.iter().find(|n| spoken_name(n) == h.name).cloned());
+    if let Some(hit) = &hint {
+        state.push_str(&format!(
+            "\nSpeech recognition often misspells names. In this transcript, {:?} sounds like the name {:?}.",
+            hit.phrase, hit.name
+        ));
+    }
+    let state = serde_json::Value::String(state);
     let answer = ollaya
         .choose(&state, &questions)?
         .remove("pane")
@@ -156,20 +172,42 @@ pub fn pick_name(
         .get(&answer.choice)
         .copied()
         .unwrap_or(answer.confidence);
-    if answer.choice == NO_PANE || probability >= min_probability {
+    // On a garbled call-up ollaya can be confidently wrong, and it leans toward the
+    // first option listed ("Thank you, have a stable day." scored 0.81 for whichever
+    // pane sorted first). So a pick only counts when the transcript says the name,
+    // or the call-up sounds like it.
+    let said = |n: &str| says(transcript, n) || hinted.as_deref() == Some(n);
+    let picked = answer.choice != NO_PANE && said(&answer.choice);
+    if picked && probability >= min_probability {
         return Ok(Pick {
-            name: (answer.choice != NO_PANE).then(|| answer.choice.clone()),
+            name: Some(answer.choice.clone()),
             best: answer.choice,
             probability,
             confirm: None,
         });
     }
     // Second chance: with a dozen names in play the right one often wins at only
-    // 0.3 ("Kidna, Annual Echidna, come back."). Ask about that name alone.
-    let confirm = confirm_name(ollaya, &state, &answer.choice)?;
+    // 0.3 ("Kidna, Annual Echidna, come back."). Ask about that name alone: the top
+    // pick, or otherwise a name the transcript says (ollaya picked "Minor Canid" at
+    // 0.57 for "Magnificent vole. Magnificent vole. This is Base Base."), or the name
+    // the call-up sounds like ("Fund egret").
+    let spelled = names.iter().find(|n| says(transcript, n)).cloned();
+    let candidate = match (picked, spelled.or(hinted)) {
+        (true, _) => answer.choice.clone(),
+        (false, Some(n)) => n,
+        (false, None) => {
+            return Ok(Pick {
+                name: None,
+                best: answer.choice,
+                probability,
+                confirm: None,
+            })
+        }
+    };
+    let confirm = confirm_name(ollaya, &state, &candidate)?;
     Ok(Pick {
-        name: (confirm >= CONFIRM_MIN).then(|| answer.choice.clone()),
-        best: answer.choice,
+        name: (confirm >= CONFIRM_MIN).then(|| candidate.clone()),
+        best: candidate,
         probability,
         confirm: Some(confirm),
     })
@@ -202,6 +240,20 @@ fn confirm_name(ollaya: &OllayaClient, state: &serde_json::Value, name: &str) ->
     Ok(answer.probabilities.get("yes").copied().unwrap_or(0.0))
 }
 
+/// Whether `transcript` says the option `label` outright: its spoken words in order,
+/// ignoring case and punctuation. A "(paneId)" suffix on a duplicate name isn't said.
+fn says(transcript: &str, label: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let name = spoken_name(label);
+    let name = words(name.split(" (").next().unwrap_or(&name));
+    !name.is_empty() && words(transcript).windows(name.len()).any(|w| w == name)
+}
+
 /// A pane name as it would be said aloud: letters, digits, apostrophes, hyphens and
 /// spaces only ("Annual Echidna 🧇" -> "Annual Echidna"). Used only in the text
 /// ollaya reads; options are still keyed by the exact pane name.
@@ -226,5 +278,14 @@ mod tests {
             "Top Rabbit (a29df980)"
         );
         assert_eq!(spoken_name("O'Brien-Smith"), "O'Brien-Smith");
+    }
+
+    #[test]
+    fn says_needs_the_whole_name() {
+        assert!(says("Annual Echidna, come in.", "Annual Echidna 🧇"));
+        assert!(says("echo x-ray, echo X-ray.", "Echo X-ray"));
+        assert!(says("Top rabbit over", "Top Rabbit 🧟 (a29df980)"));
+        assert!(!says("If scent roll, magnifice and ball", "Echo X-ray"));
+        assert!(!says("Echo, come in", "Echo X-ray"));
     }
 }

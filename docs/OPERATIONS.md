@@ -181,6 +181,29 @@ about that name alone (calling it or not), and the call is routed if that clears
 0.4. On 14 labelled calls, calls naming the pane scored 0.34–0.92 on this check and
 calls naming none 0.06–0.30. The log shows both: `(p=0.31, confirm 0.57)`.
 
+**Sounds-like names.** ollaya reads text, not sound, so it can't tell that
+"Stables arena" is "Stable Xerinae". hertzd looks in the first 8 words of the call
+for a phrase that sounds like a whole name (a metaphone-style key per word, then at
+least 0.75 similarity) and, if it finds one, adds a note to what ollaya reads:
+`"Stables arena" sounds like the name "Stable Xerinae"`. ollaya still decides, and
+the name gets the second chance even when "none" won. ollaya trusts the note almost
+completely, so the match is strict. On 15 misheard call-ups and 16 non-calls it found
+13 with the right name, never a wrong one, and nothing on the non-calls.
+
+**The name must be said.** On a garbled call-up ollaya can be confidently wrong
+("If scent roll, magnifice and ball" went to a call sign at 0.97), and it leans
+toward the first option listed. So its pick only counts when the transcript says
+that name outright or the call-up sounds like it. When ollaya picks a name that
+isn't there but another name is ("Magnificent vole. Magnificent vole." scored
+Minor Canid first), the second chance asks about the name that was said.
+
+**Live transcript alongside.** With `[transcription] live = true`, each call's
+live-stream text is kept for the relay. Neither pass is always right (live once
+heard "it'll figure it out" where the full pass wrote "you'll"), so when the two
+differ in their words the message carries both: `(Live transcript, heard while the
+caller talked: ...)`. When the full transcript names no one, the live one is routed
+next (log: `live transcript "..." -> <pane>`), then the server transcript.
+
 Only live transmissions are relayed; transcripts made for old recordings at
 startup are not.
 
