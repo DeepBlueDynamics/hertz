@@ -33,9 +33,9 @@ Pushing a `v*` tag by hand runs `release.yml` alone.
 
 ## One-time setup (a person must do this)
 
-1. **LICENSE.** Add a `LICENSE` file at the repo root. The release and
-   `package-cli.cjs` refuse to run without one. `rusb` statically links libusb
-   (LGPL-2.1), so check the obligations for the binaries.
+1. **LICENSE.** `LICENSE` (BSD 3-Clause) at the repo root ships in every
+   package; the release and `package-cli.cjs` refuse to run without it. `rusb`
+   statically links libusb (LGPL-2.1); the README's License section says so.
 2. **First publish by hand.** npm only lets you add a trusted publisher to a
    package that exists. Run the release once, download the `npm-cli` artifact,
    then `npm login` (browser and security key, in a real terminal) and

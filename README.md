@@ -5,7 +5,40 @@ the dongles, demodulates NFM/AM, runs a squelch, records each transmission to WA
 transcribes it on-device with [Cactus Whistle](crates/whistle), and serves
 everything over REST, WebSocket and SSE. `hertz` is the terminal client.
 
-## Quick start (Windows, native)
+## Install (npm)
+
+Prebuilt `hertzd` and `hertz` for Linux arm64 (Raspberry Pi 4/5, HaLOS), Linux
+x64, macOS (Apple Silicon and Intel) and Windows x64. Needs Node 18 or later; npm
+installs only the binary for your machine.
+
+```sh
+npm install -g @deepbluedynamics/hertz
+hertzd --version
+cp "$(npm root -g)/@deepbluedynamics/hertz/hertz.example.toml" hertz.toml   # then edit
+hertzd hertz.toml --listen
+hertz           # console, connects to http://localhost:9080
+```
+
+The band plans ship with the package (`HERTZ_BANDPLANS` overrides them). On first
+use hertzd downloads Whistle's engine and weights (about 17 MB) and caches them,
+so run it once with internet before going offline.
+
+On Linux and the Pi, do the one-time USB setup npm can't do: the system libraries,
+the kernel TV-driver blacklist and the udev rule:
+
+```sh
+sudo apt install libasound2 libudev1
+echo 'blacklist dvb_usb_rtl28xxu' | sudo tee /etc/modprobe.d/blacklist-rtlsdr.conf
+sudo curl -o /etc/udev/rules.d/60-hertz-rtlsdr.rules \
+  https://raw.githubusercontent.com/DeepBlueDynamics/hertz/main/docs/60-hertz-rtlsdr.rules
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+Then replug the dongle (use a powered USB hub). On Windows the dongle needs the
+WinUSB driver ([docs/INSTALL.md](docs/INSTALL.md)). To run hertzd under systemd,
+and for how releases are built and published, see [docs/NPM.md](docs/NPM.md).
+
+## Quick start (Windows, from source)
 
 One RTL-SDR on a WinUSB driver (see [docs/INSTALL.md](docs/INSTALL.md)). Copy
 `hertz.windows.example.toml` to `data\hertz.windows.toml`, set your dongle serial, then:
@@ -158,3 +191,10 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (drivers per OS, Whistle),
 [docs/OPERATIONS.md](docs/OPERATIONS.md) (data, bandplans, diagnostics),
 [docs/OLLAYA.md](docs/OLLAYA.md) (ollaya setup), and the frontend plans in
 [plan/](plan/) (TUI waterfall spec and client brief).
+
+## License
+
+BSD 3-Clause; see [LICENSE](LICENSE). The `whistle` crate is Apache-2.0. The
+prebuilt binaries statically link libusb, which is LGPL-2.1
+([source](https://github.com/libusb/libusb)); build from this repository to relink
+against your own copy.

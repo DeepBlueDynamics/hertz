@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/DeepBlueDynamics/hertz/issues"
   },
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "BSD-3-Clause",
   "bin": {
     "hertz": "bin/hertz.js",
     "hertzd": "bin/hertzd.js"
