@@ -1485,7 +1485,7 @@ async fn run_tui(
                     .take(act_inner.height as usize)
                     .map(|s| Line::from(s.as_str()))
                     .collect();
-                let act_paragraph = Paragraph::new(act_lines);
+                let act_paragraph = Paragraph::new(act_lines).wrap(Wrap { trim: false });
                 f.render_widget(act_paragraph, act_inner);
 
                 // Render Transcript Pane
@@ -1508,7 +1508,7 @@ async fn run_tui(
                     .take(ts_inner.height as usize)
                     .map(|s| Line::from(s.as_str()))
                     .collect();
-                let ts_paragraph = Paragraph::new(ts_lines);
+                let ts_paragraph = Paragraph::new(ts_lines).wrap(Wrap { trim: false });
                 f.render_widget(ts_paragraph, ts_inner);
 
                 // Render Status Bar
