@@ -73,6 +73,8 @@ struct Relay {
     verify_model: String,
     min_probability: f64,
     bus: EventBus,
+    /// The Hyperia pane hertzd runs in (`HYPERIA_PANE`), never a destination.
+    own_pane: Option<String>,
     /// Terminal panes by paneId, with when each was last seen in a layout.
     seen: Mutex<HashMap<String, (Pane, Instant)>>,
     /// Each channel's finished live-stream transcript (empty when live is off).
@@ -157,6 +159,7 @@ pub fn spawn(
         verify_model: cfg.verify_model.clone(),
         min_probability: cfg.min_probability,
         bus: bus.clone(),
+        own_pane: std::env::var("HYPERIA_PANE").ok().filter(|p| !p.is_empty()),
         seen: Mutex::new(HashMap::new()),
         live: live_transcripts,
     });
@@ -200,7 +203,10 @@ impl Relay {
     /// unseen for PANE_MEMORY, and return what is left.
     fn panes(&self) -> Vec<Pane> {
         let fresh = match self.hyperia.layout() {
-            Ok(layout) => terminal_panes(&layout),
+            Ok(layout) => terminal_panes(&layout)
+                .into_iter()
+                .filter(|p| !is_hertz_pane(p, self.own_pane.as_deref()))
+                .collect(),
             Err(e) => {
                 debug!("relay: pane list fetch failed: {e:#}");
                 Vec::new()
@@ -488,6 +494,20 @@ impl Relay {
     }
 }
 
+/// hertz's own panes: the one hertzd runs in, and any running hertzd or the hertz
+/// console. A call never goes to them; they can't act on it (a caller saying
+/// "Fond Egret" about the hertzd pane was routed back to it).
+fn is_hertz_pane(p: &Pane, own_pane: Option<&str>) -> bool {
+    own_pane == Some(p.pane_id.as_str())
+        || matches!(
+            p.process
+                .trim_end_matches(".exe")
+                .rsplit(['\\', '/'])
+                .next(),
+            Some("hertzd" | "hertz")
+        )
+}
+
 /// Lowercase words without punctuation, to compare two transcripts.
 fn words(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '\'')
@@ -528,5 +548,37 @@ fn expand_home(path: &str) -> std::path::PathBuf {
             .map(|h| std::path::PathBuf::from(h).join(rest))
             .unwrap_or_else(|| path.into()),
         None => path.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pane(id: &str, process: &str) -> Pane {
+        Pane {
+            name: "Fond Egret 🦞".into(),
+            pane_id: id.into(),
+            active: false,
+            focused: false,
+            kind: "terminal".into(),
+            process: process.into(),
+        }
+    }
+
+    #[test]
+    fn hertz_never_routes_to_its_own_panes() {
+        assert!(
+            is_hertz_pane(&pane("4dab", "pwsh"), Some("4dab")),
+            "the pane hertzd runs in"
+        );
+        assert!(is_hertz_pane(&pane("x", "hertzd"), None));
+        assert!(is_hertz_pane(
+            &pane("x", r"C:\hertz\target\release\hertzd.exe"),
+            None
+        ));
+        assert!(is_hertz_pane(&pane("x", "hertz"), None), "the console");
+        assert!(!is_hertz_pane(&pane("x", "claude"), Some("4dab")));
+        assert!(!is_hertz_pane(&pane("x", "hertz-panes"), None));
     }
 }
