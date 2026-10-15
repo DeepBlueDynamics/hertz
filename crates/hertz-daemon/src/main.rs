@@ -35,7 +35,25 @@ async fn main() -> anyhow::Result<()> {
         .find(|a| !a.starts_with("--"))
         .cloned()
         .or_else(|| std::env::var("HERTZ_CONFIG").ok());
-    let config = DaemonConfig::load(config_path.as_deref())?;
+    let mut config = DaemonConfig::load(config_path.as_deref())?;
+    // Optional `--weather[=WX3,...]`: NOAA weather monitoring on every scanning dongle,
+    // 3 minutes every 15, the first right away. Channels from the flag, else the
+    // config's [dongle.weather], else WX1. Receive is offline while it samples.
+    if let Some(flag) = argv
+        .iter()
+        .find(|a| *a == "--weather" || a.starts_with("--weather="))
+    {
+        let given: Vec<String> = flag
+            .strip_prefix("--weather=")
+            .map(|list| {
+                list.split(',')
+                    .map(|c| c.trim().to_uppercase())
+                    .filter(|c| !c.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        apply_weather_flag(&mut config, &given);
+    }
     let bandplans_dir = locate_bandplans();
     let channels = hertz_channels::load_channels(&bandplans_dir, None::<&std::path::PathBuf>)?;
 
@@ -103,4 +121,78 @@ fn locate_bandplans() -> std::path::PathBuf {
         }
     }
     std::path::PathBuf::from("./bandplans")
+}
+
+/// `--weather`: 3 minutes every 15 on each scanning monitor dongle, starting now.
+fn apply_weather_flag(config: &mut DaemonConfig, given: &[String]) {
+    for dc in &mut config.dongles {
+        let scanning = dc.role == hertz_types::DongleRole::Monitor
+            && dc.scan.as_ref().is_some_and(|s| !s.is_empty());
+        if !scanning {
+            continue;
+        }
+        let channels = if !given.is_empty() {
+            given.to_vec()
+        } else {
+            dc.weather
+                .as_ref()
+                .map(|w| w.channels.clone())
+                .unwrap_or_else(|| vec!["WX1".to_string()])
+        };
+        dc.weather = Some(hertz_types::WeatherConfig {
+            channels,
+            every_minutes: 15,
+            sample_seconds: 180,
+            first_after_seconds: 0,
+        });
+    }
+}
+
+#[cfg(test)]
+mod weather_flag_tests {
+    use super::*;
+
+    #[test]
+    fn flag_sets_three_minutes_every_fifteen_starting_now() {
+        let toml = r#"
+            [daemon]
+            listen = "127.0.0.1:0"
+            [[dongle]]
+            serial = "1"
+            role = "monitor"
+            squelch_db = 10.0
+            record = false
+            scan = ["72"]
+            [dongle.weather]
+            channels = ["WX3"]
+            every_minutes = 30
+            sample_seconds = 8
+            [[dongle]]
+            serial = "2"
+            role = "monitor"
+            squelch_db = 10.0
+            record = false
+        "#;
+        let mut config: DaemonConfig = toml::from_str(toml).unwrap();
+        apply_weather_flag(&mut config, &[]);
+        let w = config.dongles[0].weather.as_ref().unwrap();
+        assert_eq!(
+            (
+                w.channels.clone(),
+                w.every_minutes,
+                w.sample_seconds,
+                w.first_after_seconds
+            ),
+            (vec!["WX3".to_string()], 15, 180, 0)
+        );
+        assert!(
+            config.dongles[1].weather.is_none(),
+            "a fixed-frequency dongle doesn't scan, so no weather"
+        );
+        apply_weather_flag(&mut config, &["WX1".into(), "WX2".into()]);
+        assert_eq!(
+            config.dongles[0].weather.as_ref().unwrap().channels,
+            vec!["WX1", "WX2"]
+        );
+    }
 }

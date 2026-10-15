@@ -24,7 +24,7 @@ use hertz_dsp::{AudioKind, Complex32, Mode};
 use hertz_sdr::{WorkerEvent, WorkerHandle};
 use hertz_types::{Channel, Event, WeatherConfig};
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::audio::AudioFrame;
 use crate::control::{DongleControl, DongleControlSnapshot};
@@ -1118,10 +1118,18 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     // Idle between calls: take the weather sample if it's due.
                     if let (Some(due), Some((w, tx))) = (next_weather, dsp.weather.as_ref()) {
                         if now >= due {
+                            let mins = (w.sample_seconds * weather.len() as u64).div_ceil(60);
+                            let names = weather.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>().join(",");
+                            warn!(
+                                "RADIO RECEIVE OFFLINE | sampling weather {names} for about {mins} min; marine/FRS calls are not heard until it ends"
+                            );
+                            set_receive_state(&dsp, &snap, "weather", Some(names.clone()), weather[0].1 as u64,
+                                Some(format!("receive offline: sampling weather {names}")));
                             for (id, wx_freq) in &weather {
                                 let (samples, signal_db) = sample_weather(
                                     &dsp,
                                     &mut consumer,
+                                    id,
                                     *wx_freq,
                                     Duration::from_secs(w.sample_seconds),
                                 );
@@ -1139,6 +1147,8 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             next_weather = Some(
                                 Instant::now() + Duration::from_secs(w.every_minutes.max(1) * 60),
                             );
+                            info!("RADIO RECEIVE BACK ONLINE | weather sample done; scanning again (next sample in {} min)", w.every_minutes);
+                            set_receive_state(&dsp, &snap, "scanning", None, groups[g].center as u64, None);
                             let _ = dsp.worker.retune(groups[g].center);
                             acc.clear();
                             drain_into(&mut consumer, &mut acc);
@@ -1285,6 +1295,32 @@ impl Mixer {
     }
 }
 
+/// Mark the dongle's receive state for clients: a ScanState event, and the status
+/// message `/api/status` shows (None clears it).
+fn set_receive_state(
+    dsp: &DspThread,
+    snap: &DongleControlSnapshot,
+    state: &str,
+    channel: Option<String>,
+    freq_hz: u64,
+    message: Option<String>,
+) {
+    dsp.control.set_online(true, message.clone());
+    let _ = dsp.event_tx.send(Event::ScanState {
+        dongle_id: snap.dongle_id.clone(),
+        state: state.to_string(),
+        current_channel: channel,
+        current_freq_hz: freq_hz,
+    });
+    let _ = dsp.event_tx.send(Event::DongleStatus {
+        dongle_id: snap.dongle_id.clone(),
+        serial: snap.serial.clone(),
+        online: true,
+        role: snap.role,
+        message,
+    });
+}
+
 /// Tune `freq` and collect `length` of demodulated audio for the weather sideband.
 /// The squelch doesn't gate it (a broadcast is continuous), and nothing is
 /// dispatched: no squelch events, recordings, relay or speaker. Gives up after
@@ -1292,9 +1328,11 @@ impl Mixer {
 fn sample_weather(
     dsp: &DspThread,
     consumer: &mut rtrb::Consumer<u8>,
+    channel: &str,
     freq: u32,
     length: Duration,
 ) -> (Vec<f32>, Option<f32>) {
+    let dongle_id = dsp.control.snapshot().dongle_id;
     let snap = dsp.control.snapshot();
     let (mut level_sum, mut levels) = (0.0f32, 0u32);
     let mut pipeline = Pipeline::new(PipelineConfig {
@@ -1328,9 +1366,21 @@ fn sample_weather(
                         kind: AudioKind::Prebuffer,
                         ..
                     } => {}
-                    PipelineEvent::Audio { samples, .. }
-                    | PipelineEvent::MonitorTap { samples, .. } => {
-                        audio.extend_from_slice(&samples)
+                    PipelineEvent::Audio {
+                        samples, signal_db, ..
+                    }
+                    | PipelineEvent::MonitorTap { samples, signal_db } => {
+                        audio.extend_from_slice(&samples);
+                        // Live: on the speaker and in live transcription as it comes.
+                        let _ = dsp.audio_tx.send(AudioFrame {
+                            dongle_id: dongle_id.clone(),
+                            dongle_idx: dsp.dongle_idx,
+                            channel_key: channel_key(Some(channel)),
+                            channel: Some(channel.to_string()),
+                            freq_hz: freq,
+                            signal_db,
+                            pcm: samples,
+                        });
                     }
                     PipelineEvent::SignalLevel { signal_db, .. } => {
                         level_sum += signal_db;

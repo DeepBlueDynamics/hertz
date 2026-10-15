@@ -79,6 +79,12 @@ pub fn spawn(bus: &EventBus, whistle: Arc<WhistleTranscriber>, store: LiveTransc
                         break;
                     }
                 }
+                // A weather sample has no squelch close: it ends with its Weather event.
+                Ok(Event::Weather { channel, .. }) => {
+                    if tx.send(Msg::Closed { channel }).is_err() {
+                        break;
+                    }
+                }
                 Ok(_) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                 Err(_) => break,
