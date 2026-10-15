@@ -469,6 +469,7 @@ fn event_type_name(ev: &Event) -> &'static str {
         Event::Transcription { .. } => "transcription",
         Event::ServerTranscription { .. } => "server_transcription",
         Event::Weather { .. } => "weather",
+        Event::Relayed { .. } => "relayed",
         Event::Translation { .. } => "translation",
         Event::RecordingSaved { .. } => "recording_saved",
         Event::ScanState { .. } => "scan_state",

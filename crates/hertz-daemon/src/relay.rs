@@ -302,6 +302,36 @@ impl Relay {
         }
     }
 
+    /// Put a routing decision on the bus (Lume records it), whatever the outcome.
+    fn report(&self, call: &Call, text: &str, source: &str, to: Option<&str>, outcome: String) {
+        self.bus.publish_event(Event::Relayed {
+            dongle_id: call.dongle_id.clone(),
+            channel: (call.channel != "?").then(|| call.channel.clone()),
+            freq_hz: call.freq_hz,
+            text: text.to_string(),
+            source: source.to_string(),
+            to: to.map(str::to_string),
+            outcome,
+        });
+    }
+
+    /// Send to `dest` and report it; the delivery when it went out.
+    fn send_reported(
+        &self,
+        call: &Call,
+        text: &str,
+        source: &str,
+        dest: &Dest,
+        body: &str,
+    ) -> anyhow::Result<Sent> {
+        let result = self.send(dest, &call.subject(), body);
+        match &result {
+            Ok(sent) => self.report(call, text, source, Some(&sent.to), sent.state.clone()),
+            Err(e) => self.report(call, text, source, None, format!("delivery failed: {e:#}")),
+        }
+        result
+    }
+
     fn handle(&self, call: &Call) {
         let ch = &call.channel;
         let live = self.live_text(call);
@@ -310,6 +340,13 @@ impl Relay {
                 info!(
                     "RELAY | Ch {ch} | can't find a call sign or pane for {:?} (best guess {best:?}, p={probability:.2})",
                     call.text
+                );
+                self.report(
+                    call,
+                    &call.text,
+                    "on-device",
+                    None,
+                    format!("no match (best guess {best:?}, p={probability:.2})"),
                 );
                 if let Some(live) = &live {
                     if self.retry_with_live(call, live) {
@@ -322,6 +359,13 @@ impl Relay {
             Ok(dest) => dest,
             Err(e) => {
                 warn!("RELAY | Ch {ch} | routing failed: {e:#}");
+                self.report(
+                    call,
+                    &call.text,
+                    "on-device",
+                    None,
+                    format!("routing failed: {e:#}"),
+                );
                 return;
             }
         };
@@ -336,7 +380,7 @@ impl Relay {
                 "\n\n(Live transcript, heard while the caller talked: {live})"
             ));
         }
-        match self.send(&dest, &call.subject(), &body) {
+        match self.send_reported(call, &call.text, "on-device", &dest, &body) {
             Ok(sent) => {
                 info!("RELAY | Ch {ch} | -> {} | {}", sent.to, sent.state);
                 if let Some(pane_id) = &sent.pane_id {
@@ -365,7 +409,7 @@ impl Relay {
                     chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
                     call.text
                 );
-                match self.send(&dest, &call.subject(), &body) {
+                match self.send_reported(call, live, "live", &dest, &body) {
                     Ok(sent) => {
                         info!(
                             "RELAY | Ch {ch} | live transcript {live:?} -> {} | {}",
@@ -400,9 +444,18 @@ impl Relay {
             return;
         }
         match self.route(&server_text) {
-            Ok(Dest::NoMatch { best, probability }) => info!(
-                "RELAY | Ch {ch} | server transcript {server_text:?} names no call sign or pane either (best guess {best:?}, p={probability:.2})"
-            ),
+            Ok(Dest::NoMatch { best, probability }) => {
+                info!(
+                    "RELAY | Ch {ch} | server transcript {server_text:?} names no call sign or pane either (best guess {best:?}, p={probability:.2})"
+                );
+                self.report(
+                    call,
+                    &server_text,
+                    "server",
+                    None,
+                    format!("no match (best guess {best:?}, p={probability:.2})"),
+                );
+            }
             Ok(dest) => {
                 let body = format!(
                     "Radio call on Ch {ch} ({:.3} MHz), {}:\n\n{server_text}\n\n(Routed from the transcription server's version. On-device transcript: {})",
@@ -410,7 +463,7 @@ impl Relay {
                     chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
                     call.text
                 );
-                match self.send(&dest, &call.subject(), &body) {
+                match self.send_reported(call, &server_text, "server", &dest, &body) {
                     Ok(sent) => info!(
                         "RELAY | Ch {ch} | server transcript {server_text:?} -> {} | {}",
                         sent.to, sent.state
@@ -418,7 +471,16 @@ impl Relay {
                     Err(e) => warn!("RELAY | Ch {ch} | delivery failed: {e:#}"),
                 }
             }
-            Err(e) => warn!("RELAY | Ch {ch} | routing server transcript failed: {e:#}"),
+            Err(e) => {
+                warn!("RELAY | Ch {ch} | routing server transcript failed: {e:#}");
+                self.report(
+                    call,
+                    &server_text,
+                    "server",
+                    None,
+                    format!("routing failed: {e:#}"),
+                );
+            }
         }
     }
 

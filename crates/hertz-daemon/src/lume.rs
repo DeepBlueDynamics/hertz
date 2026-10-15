@@ -48,6 +48,7 @@ pub fn spawn(bus: &EventBus, cfg: Option<LumeConfig>, mock: bool) {
                 Ok(
                     ev @ (Event::Transcription { .. }
                     | Event::ServerTranscription { .. }
+                    | Event::Relayed { .. }
                     | Event::Weather { .. }
                     | Event::SquelchEvent { .. }
                     | Event::SignalLevel { .. }
@@ -187,33 +188,52 @@ fn run(cfg: LumeConfig, rx: Receiver<Event>) {
     let agent = agent();
     let instance = cfg.instance.clone().unwrap_or_else(host_name);
     let mut announced_missing = false;
+    // One feed for the whole run, so calls heard while Lume is down are kept (up to
+    // BACKLOG) and sent when it's found.
+    let mut feed = Feed::new(None, instance, agent.clone());
     loop {
         let Some(target) = discover(&cfg, &agent) else {
             if !announced_missing {
-                info!("lume: no Lume found (set [lume] url, or run `lume serve --otlp`); checking every minute");
+                info!("lume: no Lume found (set [lume] url, or run `lume serve --otlp`); checking every minute, keeping calls until then");
                 announced_missing = true;
             }
-            // Drop what arrives meanwhile; there's nowhere to send it.
             let until = Instant::now() + REDISCOVER;
             while let Some(left) = until.checked_duration_since(Instant::now()) {
-                if matches!(rx.recv_timeout(left), Err(RecvTimeoutError::Disconnected)) {
-                    return;
+                match rx.recv_timeout(left) {
+                    Ok(ev) => feed.take(ev),
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => return,
                 }
             }
             continue;
         };
         announced_missing = false;
+        let queued = feed.logs.len();
         info!(
-            "lume: sending radio traffic to {} (found via {})",
-            target.url, target.via
+            "lume: sending radio traffic to {} (found via {}){}",
+            target.url,
+            target.via,
+            if queued > 0 {
+                format!("; {queued} record(s) kept while it was away")
+            } else {
+                String::new()
+            }
         );
-        let mut feed = Feed::new(target, instance.clone(), agent.clone());
+        feed.target = Some(target);
+        // Signal sums from the gap would land in one window; start a fresh one.
+        feed.reset_metrics();
         match feed.run(&rx) {
             Ended::Disconnected => return,
-            Ended::LostLume(why) => warn!("lume: stopped sending to {}: {why}", feed.target.url),
+            Ended::LostLume(why) => {
+                let url = feed.target.take().map(|t| t.url).unwrap_or_default();
+                warn!("lume: stopped sending to {url}: {why}");
+            }
         }
     }
 }
+
+/// Log records kept while Lume is unreachable; the oldest go first past this.
+const BACKLOG: usize = 2000;
 
 enum Ended {
     Disconnected,
@@ -231,7 +251,8 @@ struct ChannelStats {
 }
 
 pub struct Feed {
-    target: Target,
+    /// None while no Lume is found; records accumulate meanwhile.
+    target: Option<Target>,
     instance: String,
     agent: ureq::Agent,
     logs: Vec<Value>,
@@ -240,7 +261,7 @@ pub struct Feed {
 }
 
 impl Feed {
-    pub fn new(target: Target, instance: String, agent: ureq::Agent) -> Self {
+    pub fn new(target: Option<Target>, instance: String, agent: ureq::Agent) -> Self {
         Self {
             target,
             instance,
@@ -249,6 +270,17 @@ impl Feed {
             channels: HashMap::new(),
             window_start: SystemTime::now(),
         }
+    }
+
+    fn reset_metrics(&mut self) {
+        for s in self.channels.values_mut() {
+            s.open_s = 0.0;
+            s.transmissions = 0;
+            if s.open_since.is_some() {
+                s.open_since = Some(Instant::now());
+            }
+        }
+        self.window_start = SystemTime::now();
     }
 
     fn run(&mut self, rx: &Receiver<Event>) -> Ended {
@@ -294,6 +326,14 @@ impl Feed {
 
     /// Turn a bus event into a log record and/or metric update.
     pub fn take(&mut self, ev: Event) {
+        self.record(ev);
+        if self.logs.len() > BACKLOG {
+            let extra = self.logs.len() - BACKLOG;
+            self.logs.drain(..extra);
+        }
+    }
+
+    fn record(&mut self, ev: Event) {
         let now = Instant::now();
         match ev {
             Event::Transcription {
@@ -318,6 +358,34 @@ impl Feed {
                     attrs.push(("recording", file_name(&r)));
                 }
                 self.logs.push(log_record("radio.transcript", &text, attrs));
+            }
+            Event::Relayed {
+                dongle_id,
+                channel,
+                freq_hz,
+                text,
+                source,
+                to,
+                outcome,
+            } => {
+                let body = match &to {
+                    Some(to) => format!("-> {to} | {outcome} | {text}"),
+                    None => format!("not delivered: {outcome} | {text}"),
+                };
+                let mut attrs = vec![
+                    ("dongle", dongle_id),
+                    ("freq_mhz", mhz(freq_hz)),
+                    ("source", source),
+                    ("outcome", outcome),
+                    ("transcript", text),
+                ];
+                if let Some(c) = channel {
+                    attrs.push(("channel", c));
+                }
+                if let Some(to) = to {
+                    attrs.push(("to", to));
+                }
+                self.logs.push(log_record("radio.relay", &body, attrs));
             }
             Event::Weather {
                 dongle_id,
@@ -509,8 +577,11 @@ impl Feed {
     }
 
     fn post(&self, path: &str, body: &Value) -> Result<(), Failure> {
-        let mut req = self.agent.post(&format!("{}{path}", self.target.url));
-        if let Some(t) = &self.target.token {
+        let Some(target) = &self.target else {
+            return Err(Failure::Down("no Lume found yet".into()));
+        };
+        let mut req = self.agent.post(&format!("{}{path}", target.url));
+        if let Some(t) = &target.token {
             req = req.set("Authorization", &format!("Bearer {t}"));
         }
         match req.send_json(body) {
@@ -687,7 +758,7 @@ mod tests {
             token: None,
             via: "test",
         };
-        let mut feed = Feed::new(target, "viridis".into(), agent());
+        let mut feed = Feed::new(Some(target), "viridis".into(), agent());
         feed.take(transcript("Alpha India, come in, over."));
         feed.take(transcript("   "));
         feed.take(Event::SignalLevel {
@@ -733,15 +804,7 @@ mod tests {
 
     #[test]
     fn server_transcript_is_a_second_transcript_record() {
-        let mut feed = Feed::new(
-            Target {
-                url: String::new(),
-                token: None,
-                via: "test",
-            },
-            "x".into(),
-            agent(),
-        );
+        let mut feed = Feed::new(None, "x".into(), agent());
         feed.take(Event::ServerTranscription {
             dongle_id: "d".into(),
             channel: Some("72".into()),
@@ -766,16 +829,55 @@ mod tests {
     }
 
     #[test]
+    fn calls_are_kept_while_lume_is_away_and_sent_when_found() {
+        let (url, seen) = fake_lume();
+        let mut feed = Feed::new(None, "x".into(), agent());
+        feed.take(transcript("heard while Lume was down"));
+        assert!(feed.flush_logs().is_err(), "nowhere to send yet");
+        assert_eq!(feed.logs.len(), 1, "kept, not dropped");
+        feed.target = Some(Target {
+            url,
+            token: None,
+            via: "test",
+        });
+        assert!(feed.flush_logs().is_ok());
+        assert!(seen.lock().unwrap()[0]
+            .1
+            .contains("heard while Lume was down"));
+        assert!(feed.logs.is_empty());
+    }
+
+    #[test]
+    fn backlog_keeps_the_newest() {
+        let mut feed = Feed::new(None, "x".into(), agent());
+        for i in 0..BACKLOG + 5 {
+            feed.take(transcript(&format!("call {i}")));
+        }
+        assert_eq!(feed.logs.len(), BACKLOG);
+        assert_eq!(feed.logs[0]["body"]["stringValue"], "call 5");
+    }
+
+    #[test]
+    fn a_wrong_route_is_on_record() {
+        let mut feed = Feed::new(None, "x".into(), agent());
+        feed.take(Event::Relayed {
+            dongle_id: "d".into(),
+            channel: Some("gmrs-15".into()),
+            freq_hz: 462_550_000,
+            text: "Stable Xerinae, Lume is not running in Yucky Fowl.".into(),
+            source: "on-device".into(),
+            to: Some("Yucky Fowl (pane name)".into()),
+            outcome: "awaiting_approval".into(),
+        });
+        let r = &feed.logs[0];
+        assert_eq!(r["eventName"], "radio.relay");
+        let body = r["body"]["stringValue"].as_str().unwrap();
+        assert!(body.starts_with("-> Yucky Fowl") && body.contains("Lume is not running"));
+    }
+
+    #[test]
     fn squelch_time_and_transmissions_count_per_channel() {
-        let mut feed = Feed::new(
-            Target {
-                url: String::new(),
-                token: None,
-                via: "test",
-            },
-            "x".into(),
-            agent(),
-        );
+        let mut feed = Feed::new(None, "x".into(), agent());
         let squelch = |open| Event::SquelchEvent {
             dongle_id: "d".into(),
             channel: Some("16".into()),

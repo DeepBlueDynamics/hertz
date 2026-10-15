@@ -63,6 +63,23 @@ pub enum Event {
         /// Server model, e.g. "medium".
         model: String,
     },
+    /// A routing decision by the relay: where a call went (or why it went nowhere),
+    /// so a wrong pick is on record next to the transcript.
+    Relayed {
+        dongle_id: String,
+        channel: Option<String>,
+        freq_hz: u64,
+        /// The transcript that was routed.
+        text: String,
+        /// Which version was routed: "on-device", "live" or "server".
+        source: String,
+        /// The pane or call sign it went to; None when it went nowhere.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<String>,
+        /// Hyperia's delivery state, or "no match (best guess …)", "routing failed: …",
+        /// "delivery failed: …".
+        outcome: String,
+    },
     /// What a NOAA weather channel was saying, from a short sample.
     Weather {
         dongle_id: String,
