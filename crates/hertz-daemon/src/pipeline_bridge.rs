@@ -85,7 +85,15 @@ pub fn spawn_monitor_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             let mut consumer = dsp.worker.reader();
             let mut acc: Vec<u8> = Vec::with_capacity(MONITOR_FRAME_BYTES * 2);
             let snap = dsp.control.snapshot();
-            let mut pipeline = build_pipeline(&snap);
+            // A broadcast (NOAA weather) plays continuously, not squelch-gated.
+            let mut broadcast = is_broadcast(&dsp.channels, snap.freq_hz);
+            if broadcast {
+                tracing::info!(
+                    "monitor: {:.4} MHz is a continuous broadcast; playing it ungated",
+                    snap.freq_hz as f64 / 1e6
+                );
+            }
+            let mut pipeline = build_pipeline_streaming(&snap, broadcast);
             let mut freq = snap.freq_hz as u32;
             let mut last_freq_epoch = snap.freq_epoch;
             let mut last_squelch_epoch = snap.squelch_epoch;
@@ -102,12 +110,19 @@ pub fn spawn_monitor_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                 if snap.freq_epoch != last_freq_epoch {
                     let _ = dsp.worker.retune(snap.freq_hz as u32);
                     freq = snap.freq_hz as u32;
-                    pipeline.reset();
+                    let now_broadcast = is_broadcast(&dsp.channels, snap.freq_hz);
+                    if now_broadcast != broadcast {
+                        broadcast = now_broadcast;
+                        pipeline = build_pipeline_streaming(&snap, broadcast);
+                    } else {
+                        pipeline.reset();
+                    }
                     last_freq_epoch = snap.freq_epoch;
                     debug!("monitor {} retune -> {} Hz", snap.dongle_id, freq);
                 }
                 if snap.squelch_epoch != last_squelch_epoch {
-                    pipeline = build_pipeline(&snap);
+                    // Live, keeping the learned noise floor.
+                    pipeline.set_squelch_margin(snap.squelch_db);
                     last_squelch_epoch = snap.squelch_epoch;
                 }
                 // Process whatever full frames we have.
@@ -238,16 +253,29 @@ fn dispatch_monitor_event(
 }
 
 fn build_pipeline(snap: &DongleControlSnapshot) -> Pipeline {
+    build_pipeline_streaming(snap, false)
+}
+
+/// `always_stream` plays closed-squelch frames too: right for a continuous
+/// broadcast (NOAA weather), where the squelch learns the carrier as its floor and
+/// closes within seconds; wrong for a call channel, where it plays raw static.
+fn build_pipeline_streaming(snap: &DongleControlSnapshot, always_stream: bool) -> Pipeline {
     // T4: monitor is NFM; bandplan/per-channel mode selection arrives with the
     // channelized AM/SSB work. AM channels route through the channelized path.
     Pipeline::new(PipelineConfig {
         mode: Mode::Nfm,
         squelch_margin_db: snap.squelch_db,
         input_sample_rate_hz: SDR_RATE,
-        // Squelch-gated only: streaming closed-squelch frames plays raw static.
-        always_stream: false,
+        always_stream,
         ..PipelineConfig::default()
     })
+}
+
+/// Whether `freq_hz` is a continuous broadcast in the band plans (NOAA weather).
+fn is_broadcast(db: &ChannelDb, freq_hz: u64) -> bool {
+    db.get_by_freq(freq_hz, 1_000)
+        .iter()
+        .any(|c| c.continuous_carrier)
 }
 
 /// Find the channel id at a frequency, if any (1 kHz tolerance).
