@@ -20,7 +20,7 @@ use hertz_dsp::channelizer::{
 };
 use hertz_dsp::classify::SignalClassification;
 use hertz_dsp::pipeline::{Pipeline, PipelineConfig, PipelineEvent, AUDIO_SAMPLE_RATE, SDR_RATE};
-use hertz_dsp::{AudioKind, Mode};
+use hertz_dsp::{AudioKind, Complex32, Mode};
 use hertz_sdr::{WorkerEvent, WorkerHandle};
 use hertz_types::{Channel, Event, WeatherConfig};
 use tokio::sync::mpsc;
@@ -653,6 +653,47 @@ fn poll_worker_events(dsp: &DspThread) {
 /// conversation are caught before the scan resumes (vhf_monitor AUTO_RESUME_SCAN_SEC).
 const SCAN_RESUME_AFTER: Duration = Duration::from_secs(5);
 
+/// Scan neighbours this close are checked when a squelch opens.
+const NEIGHBOUR_HZ: i64 = 15_000;
+/// A neighbour must be this much stronger to take the call.
+const NEIGHBOUR_MARGIN_DB: f32 = 3.0;
+
+/// Power (dB) near `offset_hz` from the tuned frequency: mix it to 0 Hz and
+/// average 32-sample blocks, a boxcar whose first null is SDR_RATE/32 = 7.5 kHz.
+fn power_at_db(iq: &[Complex32], offset_hz: f32) -> f32 {
+    const BLOCK: usize = 32;
+    let step = -2.0 * std::f32::consts::PI * offset_hz / SDR_RATE as f32;
+    let mut sum = 0.0f32;
+    let mut blocks = 0u32;
+    for (b, chunk) in iq.chunks_exact(BLOCK).enumerate() {
+        let start = (b * BLOCK) as f32 * step;
+        let mean: Complex32 = chunk
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| s * Complex32::from_polar(1.0, start + i as f32 * step))
+            .sum::<Complex32>()
+            / BLOCK as f32;
+        sum += mean.norm_sqr();
+        blocks += 1;
+    }
+    10.0 * (sum / blocks.max(1) as f32 + 1e-12).log10()
+}
+
+/// The scan neighbour within NEIGHBOUR_HZ whose signal in this frame beats the
+/// tuned channel's by NEIGHBOUR_MARGIN_DB, if any.
+fn stronger_neighbour(iq: &[Complex32], idx: usize, chans: &[(String, u32)]) -> Option<usize> {
+    let here = chans[idx].1 as i64;
+    let own = power_at_db(iq, 0.0);
+    chans
+        .iter()
+        .enumerate()
+        .filter(|&(j, (_, f))| j != idx && (*f as i64 - here).abs() <= NEIGHBOUR_HZ)
+        .map(|(j, (_, f))| (j, power_at_db(iq, (*f as i64 - here) as f32)))
+        .filter(|&(_, p)| p > own + NEIGHBOUR_MARGIN_DB)
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(j, _)| j)
+}
+
 /// A squelch open this long is a stuck carrier, not a call.
 const SCAN_MAX_OPEN: Duration = Duration::from_secs(30);
 /// How long a nuisance channel (carrier or static, no voice) is skipped.
@@ -808,7 +849,29 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         pipeline.clear_prebuffer();
                     }
                     let was_open = pipeline.is_squelch_open();
-                    for pe in pipeline.process_buffer(&iq) {
+                    let events = pipeline.process_buffer(&iq);
+                    // FRS/GMRS channels are 12.5 kHz apart, inside this channel's
+                    // filter: a call on the next channel opens this one too. If a
+                    // scanned neighbour is stronger, drop this open unannounced and
+                    // move there; its own squelch opens on the next frame.
+                    if !was_open && pipeline.is_squelch_open() {
+                        if let Some(better) = stronger_neighbour(&iq, idx, &chans) {
+                            debug!(
+                                "scan: Ch {} opened on Ch {}'s signal; moving there",
+                                chans[idx].0, chans[better].0
+                            );
+                            pipeline.reset();
+                            idx = better;
+                            last_open = Some(Instant::now());
+                            let _ = dsp.worker.retune(chans[idx].1);
+                            acc.clear();
+                            drain_into(&mut consumer, &mut acc);
+                            acc.clear();
+                            settle_bytes = SETTLE_BYTES;
+                            break;
+                        }
+                    }
+                    for pe in events {
                         dispatch_monitor_event(&dsp, &snap, freq, &pe);
                         // A squelch that closes on a carrier or static, not a voice,
                         // locks the channel out so it can't hold the scanner.
@@ -1034,5 +1097,40 @@ mod lockout_tests {
         // An expired lockout is scanned again.
         let past = Some(Instant::now() - Duration::from_secs(1));
         assert_eq!(next_channel(0, &[None, past]), 1);
+    }
+}
+
+#[cfg(test)]
+mod neighbour_tests {
+    use super::*;
+
+    /// A carrier `offset_hz` from the tuned frequency, one 50 ms frame at SDR_RATE.
+    fn tone(offset_hz: f32) -> Vec<Complex32> {
+        let step = 2.0 * std::f32::consts::PI * offset_hz / SDR_RATE as f32;
+        (0..12_000)
+            .map(|n| Complex32::from_polar(0.5, n as f32 * step))
+            .collect()
+    }
+
+    fn frs() -> Vec<(String, u32)> {
+        // gmrs-15 at 462.550 and gmrs-1 at 462.5625: 12.5 kHz apart.
+        vec![
+            ("gmrs-15".into(), 462_550_000),
+            ("gmrs-1".into(), 462_562_500),
+            ("gmrs-2".into(), 462_587_500),
+        ]
+    }
+
+    #[test]
+    fn a_call_on_the_next_channel_moves_the_scanner_there() {
+        // Tuned to gmrs-15, the call is 12.5 kHz up, on gmrs-1.
+        assert_eq!(stronger_neighbour(&tone(12_500.0), 0, &frs()), Some(1));
+    }
+
+    #[test]
+    fn a_call_on_the_tuned_channel_stays() {
+        assert_eq!(stronger_neighbour(&tone(0.0), 1, &frs()), None);
+        // gmrs-2 is 25 kHz from gmrs-1: not a neighbour to check.
+        assert_eq!(stronger_neighbour(&tone(25_000.0), 1, &frs()), None);
     }
 }
