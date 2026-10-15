@@ -167,3 +167,46 @@ fn full_transmission_lifecycle() {
     );
     assert!(!p.is_squelch_open(), "squelch should be closed at end");
 }
+
+#[test]
+fn the_frame_where_the_caller_unkeys_is_kept() {
+    // A caller who unkeys right after the last word: that frame is mostly noise by
+    // power, but it holds the end of the word, so it's recorded (faded out).
+    let mut p = Pipeline::new(PipelineConfig {
+        mode: Mode::Nfm,
+        squelch_margin_db: 6.0,
+        ..PipelineConfig::default()
+    });
+    for f in 0..8 {
+        p.process_buffer(&noise_frame(500 + f));
+    }
+    let mut voice_frames = 0usize;
+    for f in 0..6 {
+        p.process_buffer(&voice_frame(600 + f));
+        if p.is_squelch_open() {
+            voice_frames += 1;
+        }
+    }
+    assert!(voice_frames > 0, "voice opened the squelch");
+    let mut recorded = None;
+    let mut audio_frames_after_unkey = 0;
+    for f in 0..20 {
+        for e in p.process_buffer(&noise_frame(700 + f)) {
+            match e {
+                PipelineEvent::Audio {
+                    kind: AudioKind::Transmission,
+                    ..
+                } => audio_frames_after_unkey += 1,
+                PipelineEvent::TransmissionComplete(t) => recorded = Some(t.samples.len()),
+                _ => {}
+            }
+        }
+    }
+    // The voice gate's smoothing carries a few frames past the unkey; the tail frame is the last one kept.
+    assert!(audio_frames_after_unkey >= 1, "the unkey frame is kept");
+    assert!(
+        audio_frames_after_unkey < 10,
+        "the hang hiss is not played ({audio_frames_after_unkey} frames)"
+    );
+    assert!(recorded.is_some(), "the transmission completed");
+}

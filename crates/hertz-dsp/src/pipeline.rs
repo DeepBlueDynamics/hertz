@@ -303,6 +303,8 @@ struct TransmissionState {
     frames_since_squelch_open: u64,
     voice_detected_this_transmission: bool,
     recording_stopped: bool,
+    /// The last frame had signal: the next frame without it is the unkey tail.
+    tail_pending: bool,
     audio_flatness_ema: f32,
     noise_floor: f32,
     squelch_thresh: f32,
@@ -346,6 +348,7 @@ impl TransmissionState {
             frames_since_squelch_open: 0,
             voice_detected_this_transmission: false,
             recording_stopped: false,
+            tail_pending: false,
             audio_flatness_ema: 0.8, // start assuming noise
             noise_floor,
             squelch_thresh: (noise_floor + config.squelch_margin_db)
@@ -385,6 +388,7 @@ impl TransmissionState {
         self.frames_since_squelch_open = 0;
         self.voice_detected_this_transmission = false;
         self.recording_stopped = false;
+        self.tail_pending = false;
         self.audio_flatness_ema = 0.8;
     }
 
@@ -593,7 +597,20 @@ impl TransmissionState {
         // Play only frames where power or voice is present: hang frames after unkey
         // are pure discriminator noise and played as a hiss burst. (Any present frame
         // is power-confirmed or voice-flat, so no separate voice gate is needed.)
-        let should_output = self.squelch_open && signal_present;
+        // The frame where the carrier drops still holds the end of the last word: a
+        // 200 ms frame whose power averages under the threshold was dropped whole,
+        // so a caller who unkeyed right after talking lost the last word. Keep that
+        // one frame, faded out across its length (speech first, hiss after).
+        let is_tail = self.squelch_open && !signal_present && self.tail_pending;
+        if is_tail {
+            let n = audio.len().max(1) as f32;
+            for (i, s) in audio.iter_mut().enumerate() {
+                let g = 1.0 - i as f32 / n;
+                *s *= g * g;
+            }
+        }
+        self.tail_pending = self.squelch_open && signal_present;
+        let should_output = self.squelch_open && (signal_present || is_tail);
 
         if should_output {
             // Squared fade-in on the opening frame, unless the faded-in prebuffer
