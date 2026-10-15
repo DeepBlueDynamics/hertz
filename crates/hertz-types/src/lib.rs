@@ -296,6 +296,11 @@ pub struct DongleConfig {
     /// transcribe a NOAA weather broadcast.
     #[serde(default)]
     pub weather: Option<WeatherConfig>,
+    /// Fixed tuner gain in dB (0-49.6); absent = the tuner's automatic gain. A fixed
+    /// gain keeps levels steady: auto gain swings after a strong signal ends and
+    /// lifts the noise on every channel.
+    #[serde(default)]
+    pub gain_db: Option<f32>,
 }
 
 /// Weather sideband for a scanning dongle: every `every_minutes`, while no channel

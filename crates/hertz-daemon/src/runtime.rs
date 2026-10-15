@@ -364,6 +364,9 @@ pub const SCAN_READ_IQ_PAIRS: usize = 12_000;
 
 fn sdr_config_for(dc: &DongleConfig, center_hz: Option<u64>, freq_hz: u64) -> hertz_sdr::SdrConfig {
     let mut cfg = hertz_sdr::SdrConfig::default();
+    if let Some(db) = dc.gain_db {
+        cfg.gain = hertz_sdr::Gain::Db(db.clamp(0.0, 49.6));
+    }
     match dc.role {
         DongleRole::Monitor => {
             cfg.sample_rate = hertz_dsp::pipeline::SDR_RATE;

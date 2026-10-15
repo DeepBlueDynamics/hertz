@@ -908,6 +908,10 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             // When each group last had a call: recently busy groups are checked
             // every other hop.
             let mut active_at: Vec<Option<Instant>> = vec![None; groups.len()];
+            // The channel holding each group's current or last call, and when it was
+            // last open: other channels in the group stay shut until GROUP_HOLDOFF
+            // after it ends.
+            let mut group_call: Vec<Option<(usize, Instant)>> = vec![None; groups.len()];
             let (mut grot, mut gturn) = (0usize, 0usize);
 
             let mut consumer = dsp.worker.reader();
@@ -999,9 +1003,12 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         // FRS/GMRS channels are 12.5 kHz apart, inside a channel's
                         // filter: a call on the next channel opens this one too. If a
                         // neighbour in the group is stronger, drop this open unheard.
+                        let held_off = group_call[g]
+                            .is_some_and(|(o, t)| o != m && now.duration_since(t) < GROUP_HOLDOFF);
                         if !was_open
                             && pipeline.is_squelch_open()
-                            && stronger_member(&iq, center, m, &groups[g].members, &chans)
+                            && (held_off
+                                || stronger_member(&iq, center, m, &groups[g].members, &chans))
                         {
                             pipeline.reset();
                             continue;
@@ -1051,6 +1058,7 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                 open_since[m] = None;
                             } else if locked_until[m].is_none_or(|t| now >= t) {
                                 any_open = true;
+                                group_call[g] = Some((m, now));
                             }
                         } else {
                             open_since[m] = None;
@@ -1133,6 +1141,10 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
 /// Widest spread of channels monitored from one tuning: well inside the 150 kHz tuner
 /// bandwidth with room for each channel's filter.
 const GROUP_SPAN_HZ: u32 = 120_000;
+/// After a call ends (and while it's open), other channels of its group stay shut
+/// this long: the unkey swings the tuner gain and lifts the noise on every channel
+/// of the group, which opened all of them at once.
+const GROUP_HOLDOFF: Duration = Duration::from_millis(2500);
 /// A group with a call this recently is checked every other hop.
 const GROUP_HOT_FOR: Duration = Duration::from_secs(600);
 

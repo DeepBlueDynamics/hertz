@@ -43,6 +43,7 @@ fn monitor_config(listen: String, data_dir: String, auth_token: Option<String>) 
             frequency_hz: Some(156_800_000),
             scan: None,
             weather: None,
+            gain_db: None,
         }],
         transcription: None,
         tx: None,
