@@ -48,6 +48,21 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         recording: Option<String>,
     },
+    /// The transcription server's version of a call (the relay's double-check),
+    /// when it differs from the on-device transcript. Informational: the relay
+    /// doesn't route these again.
+    ServerTranscription {
+        dongle_id: String,
+        channel: Option<String>,
+        freq_hz: u64,
+        text: String,
+        /// The on-device transcript it re-checked.
+        on_device: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recording: Option<String>,
+        /// Server model, e.g. "medium".
+        model: String,
+    },
     Translation {
         dongle_id: String,
         channel: Option<String>,

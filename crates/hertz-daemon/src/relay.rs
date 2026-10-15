@@ -70,7 +70,9 @@ struct Relay {
     hyperia: HyperiaClient,
     ollaya: OllayaClient,
     verify: Option<TranscriptionService>,
+    verify_model: String,
     min_probability: f64,
+    bus: EventBus,
     /// Terminal panes by paneId, with when each was last seen in a layout.
     seen: Mutex<HashMap<String, (Pane, Instant)>>,
     /// Each channel's finished live-stream transcript (empty when live is off).
@@ -91,7 +93,9 @@ const PANE_MEMORY: Duration = Duration::from_secs(60);
 
 /// One transcript to relay.
 struct Call {
+    dongle_id: String,
     channel: String,
+    freq_hz: u64,
     mhz: f64,
     text: String,
     recording: Option<String>,
@@ -150,7 +154,9 @@ pub fn spawn(
         ollaya: OllayaClient::new(cfg.ollaya_url.clone(), cfg.ollaya_model.clone()),
         verify: (!cfg.verify_url.is_empty())
             .then(|| TranscriptionService::new(cfg.verify_url.clone(), cfg.verify_model.clone())),
+        verify_model: cfg.verify_model.clone(),
         min_probability: cfg.min_probability,
+        bus: bus.clone(),
         seen: Mutex::new(HashMap::new()),
         live: live_transcripts,
     });
@@ -166,17 +172,19 @@ pub fn spawn(
                 Err(_) => break,
             };
             let Event::Transcription {
+                dongle_id,
                 channel,
                 freq_hz,
                 text,
                 recording,
-                ..
             } = ev
             else {
                 continue;
             };
             let call = Call {
+                dongle_id,
                 channel: channel.unwrap_or_else(|| "?".into()),
+                freq_hz,
                 mhz: freq_hz as f64 / 1e6,
                 text,
                 recording,
@@ -420,12 +428,32 @@ impl Relay {
             return None;
         }
         match service.transcribe(Path::new(wav)) {
-            Ok(t) => Some(t),
+            Ok(t) => {
+                self.publish_server_transcript(call, &t);
+                Some(t)
+            }
             Err(e) => {
                 warn!("RELAY | Ch {ch} | server transcription failed: {e:#}");
                 None
             }
         }
+    }
+
+    /// Put the server's version on the bus when its words differ, so Lume and the
+    /// TUI keep both. The relay itself only routes on-device transcripts.
+    fn publish_server_transcript(&self, call: &Call, server_text: &str) {
+        if server_text.trim().is_empty() || words(server_text) == words(&call.text) {
+            return;
+        }
+        self.bus.publish_event(Event::ServerTranscription {
+            dongle_id: call.dongle_id.clone(),
+            channel: (call.channel != "?").then(|| call.channel.clone()),
+            freq_hz: call.freq_hz,
+            text: server_text.to_string(),
+            on_device: call.text.clone(),
+            recording: call.recording.clone(),
+            model: self.verify_model.clone(),
+        });
     }
 
     /// Second opinion after the send: re-transcribe on the service and follow up

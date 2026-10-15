@@ -1165,6 +1165,19 @@ async fn run_tui(
                             let ch = channel.unwrap_or_else(|| "VFO".to_string());
                             state.push_transcript(format!("[{}/{}] -> {}", dongle_id, ch, text));
                         }
+                        HertzEvent::ServerTranscription {
+                            dongle_id,
+                            channel,
+                            text,
+                            model,
+                            ..
+                        } => {
+                            let ch = channel.unwrap_or_else(|| "VFO".to_string());
+                            state.push_transcript(format!(
+                                "[{}/{}] (server {}) -> {}",
+                                dongle_id, ch, model, text
+                            ));
+                        }
                         HertzEvent::Translation {
                             dongle_id,
                             channel,

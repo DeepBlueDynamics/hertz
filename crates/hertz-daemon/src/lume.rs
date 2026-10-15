@@ -47,6 +47,7 @@ pub fn spawn(bus: &EventBus, cfg: Option<LumeConfig>, mock: bool) {
             match events.recv().await {
                 Ok(
                     ev @ (Event::Transcription { .. }
+                    | Event::ServerTranscription { .. }
                     | Event::SquelchEvent { .. }
                     | Event::SignalLevel { .. }
                     | Event::RecordingSaved { .. }),
@@ -311,6 +312,30 @@ impl Feed {
                 ];
                 if let Some(c) = &channel {
                     attrs.push(("channel", c.clone()));
+                }
+                if let Some(r) = recording {
+                    attrs.push(("recording", file_name(&r)));
+                }
+                self.logs.push(log_record("radio.transcript", &text, attrs));
+            }
+            Event::ServerTranscription {
+                dongle_id,
+                channel,
+                freq_hz,
+                text,
+                on_device,
+                recording,
+                model,
+            } => {
+                let mut attrs = vec![
+                    ("dongle", dongle_id),
+                    ("freq_mhz", mhz(freq_hz)),
+                    ("engine", "server".to_string()),
+                    ("model", model),
+                    ("on_device", on_device),
+                ];
+                if let Some(c) = channel {
+                    attrs.push(("channel", c));
                 }
                 if let Some(r) = recording {
                     attrs.push(("recording", file_name(&r)));
@@ -682,6 +707,40 @@ mod tests {
         let (path, metrics) = &seen[1];
         assert_eq!(path, "/v1/metrics");
         assert!(metrics.contains("radio.signal_db") && metrics.contains("-1.5"));
+    }
+
+    #[test]
+    fn server_transcript_is_a_second_transcript_record() {
+        let mut feed = Feed::new(
+            Target {
+                url: String::new(),
+                token: None,
+                via: "test",
+            },
+            "x".into(),
+            agent(),
+        );
+        feed.take(Event::ServerTranscription {
+            dongle_id: "d".into(),
+            channel: Some("72".into()),
+            freq_hz: 156_625_000,
+            text: "Contact the Lume Claude agent.".into(),
+            on_device: "Contact the womb, clawed agent.".into(),
+            recording: Some("transmission_2.wav".into()),
+            model: "medium".into(),
+        });
+        let record = &feed.logs[0];
+        assert_eq!(record["eventName"], "radio.transcript");
+        assert_eq!(
+            record["body"]["stringValue"],
+            "Contact the Lume Claude agent."
+        );
+        let attrs = record["attributes"].to_string();
+        assert!(
+            attrs.contains("\"server\"")
+                && attrs.contains("womb, clawed")
+                && attrs.contains("medium")
+        );
     }
 
     #[test]
