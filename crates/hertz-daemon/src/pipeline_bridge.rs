@@ -18,10 +18,10 @@ use hertz_dsp::channelizer::{
     bytes_to_iq, design_lowpass_fir, detect_active_channels, estimate_noise_floor, extract_channel,
     ChannelProbe, FFT_DETECT_SIZE, LPF_CUTOFF_NORM, LPF_TAPS,
 };
-use hertz_dsp::pipeline::{Pipeline, PipelineConfig, PipelineEvent, SDR_RATE};
-use hertz_dsp::Mode;
+use hertz_dsp::pipeline::{Pipeline, PipelineConfig, PipelineEvent, AUDIO_SAMPLE_RATE, SDR_RATE};
+use hertz_dsp::{AudioKind, Mode};
 use hertz_sdr::{WorkerEvent, WorkerHandle};
-use hertz_types::{Channel, Event};
+use hertz_types::{Channel, Event, WeatherConfig};
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
@@ -29,6 +29,7 @@ use crate::audio::AudioFrame;
 use crate::control::{DongleControl, DongleControlSnapshot};
 use crate::recorder::{RecorderTx, TransmissionJob};
 use crate::spectrum::{SpectrumEmitter, SpectrumFrame};
+use crate::weather::{WeatherSample, WeatherTx};
 
 /// Monitor frame: 48 000 IQ pairs = 200 ms at 240 kS/s (one SDR read).
 const MONITOR_FRAME_BYTES: usize = 48_000 * 2;
@@ -62,6 +63,8 @@ pub struct DspThread {
     pub channels: Arc<ChannelDb>,
     /// Monitor-role scan list (channel ids); empty = fixed frequency.
     pub scan: Vec<String>,
+    /// Weather sideband (scanning monitor only) and where its samples go.
+    pub weather: Option<(WeatherConfig, WeatherTx)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -687,6 +690,35 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             const SETTLE_BYTES: usize = crate::runtime::SCAN_READ_IQ_PAIRS * 2;
             let mut settle_bytes = SETTLE_BYTES;
             let mut last_open: Option<Instant> = None;
+            let weather: Vec<(String, u32)> = dsp
+                .weather
+                .iter()
+                .flat_map(|(w, _)| &w.channels)
+                .filter_map(|id| match dsp.channels.get_by_id(id) {
+                    Some(c) => Some((c.id.clone(), c.freq_hz as u32)),
+                    None => {
+                        warn!("weather: unknown channel id {id:?}, skipping");
+                        None
+                    }
+                })
+                .collect();
+            let mut next_weather = dsp
+                .weather
+                .as_ref()
+                .filter(|_| !weather.is_empty())
+                .map(|(w, _)| Instant::now() + Duration::from_secs(w.first_after_seconds));
+            if let Some((w, _)) = dsp.weather.as_ref().filter(|_| !weather.is_empty()) {
+                tracing::info!(
+                    "weather: sampling {} for {} s every {} min while the scan is idle",
+                    weather
+                        .iter()
+                        .map(|(id, _)| id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    w.sample_seconds,
+                    w.every_minutes
+                );
+            }
             tracing::info!(
                 "scanning {} channel(s): {}",
                 chans.len(),
@@ -739,6 +771,38 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         }
                         last_open = None;
                     }
+                    // Idle between calls: take the weather sample if it's due.
+                    if let (Some(due), Some((w, tx))) = (next_weather, dsp.weather.as_ref()) {
+                        if Instant::now() >= due {
+                            for (id, wx_freq) in &weather {
+                                let (samples, signal_db) = sample_weather(
+                                    &dsp,
+                                    &mut consumer,
+                                    *wx_freq,
+                                    Duration::from_secs(w.sample_seconds),
+                                );
+                                if dsp.shutdown.load(Ordering::Relaxed) {
+                                    return;
+                                }
+                                let _ = tx.try_send(WeatherSample {
+                                    dongle_id: snap.dongle_id.clone(),
+                                    channel: id.clone(),
+                                    freq_hz: *wx_freq as u64,
+                                    samples,
+                                    signal_db,
+                                });
+                            }
+                            next_weather = Some(
+                                Instant::now() + Duration::from_secs(w.every_minutes.max(1) * 60),
+                            );
+                            let _ = dsp.worker.retune(chans[idx].1);
+                            acc.clear();
+                            drain_into(&mut consumer, &mut acc);
+                            acc.clear();
+                            settle_bytes = SETTLE_BYTES;
+                            break;
+                        }
+                    }
                     if chans.len() > 1 {
                         idx = (idx + 1) % chans.len();
                         let _ = dsp.worker.retune(chans[idx].1);
@@ -755,4 +819,67 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             }
         })
         .expect("spawn scan dsp thread")
+}
+
+/// Tune `freq` and collect `length` of demodulated audio for the weather sideband.
+/// The squelch doesn't gate it (a broadcast is continuous), and nothing is
+/// dispatched: no squelch events, recordings, relay or speaker. Gives up after
+/// `length` plus 10 s if the dongle stops delivering, returning what it has.
+fn sample_weather(
+    dsp: &DspThread,
+    consumer: &mut rtrb::Consumer<u8>,
+    freq: u32,
+    length: Duration,
+) -> (Vec<f32>, Option<f32>) {
+    let snap = dsp.control.snapshot();
+    let (mut level_sum, mut levels) = (0.0f32, 0u32);
+    let mut pipeline = Pipeline::new(PipelineConfig {
+        mode: Mode::Nfm,
+        squelch_margin_db: snap.squelch_db,
+        input_sample_rate_hz: SDR_RATE,
+        always_stream: true,
+        ..PipelineConfig::default()
+    });
+    let want = (length.as_secs_f64() * AUDIO_SAMPLE_RATE as f64) as usize;
+    let mut audio = Vec::with_capacity(want);
+    let _ = dsp.worker.retune(freq);
+    let mut acc = Vec::with_capacity(MONITOR_FRAME_BYTES * 2);
+    // Drop the read in flight at the old frequency.
+    let mut settle = crate::runtime::SCAN_READ_IQ_PAIRS * 2;
+    let give_up = Instant::now() + length + Duration::from_secs(10);
+    while audio.len() < want && Instant::now() < give_up && !dsp.shutdown.load(Ordering::Relaxed) {
+        poll_worker_events(dsp);
+        drain_into(consumer, &mut acc);
+        if settle > 0 {
+            let n = settle.min(acc.len());
+            acc.drain(..n);
+            settle -= n;
+        }
+        while settle == 0 && acc.len() >= MONITOR_FRAME_BYTES {
+            let frame: Vec<u8> = acc.drain(..MONITOR_FRAME_BYTES).collect();
+            for pe in pipeline.process_buffer(&bytes_to_iq(&frame)) {
+                match pe {
+                    // The prebuffer repeats audio already streamed as MonitorTap.
+                    PipelineEvent::Audio {
+                        kind: AudioKind::Prebuffer,
+                        ..
+                    } => {}
+                    PipelineEvent::Audio { samples, .. }
+                    | PipelineEvent::MonitorTap { samples, .. } => {
+                        audio.extend_from_slice(&samples)
+                    }
+                    PipelineEvent::SignalLevel { signal_db, .. } => {
+                        level_sum += signal_db;
+                        levels += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if acc.len() < MONITOR_FRAME_BYTES {
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+    audio.truncate(want);
+    (audio, (levels > 0).then(|| level_sum / levels as f32))
 }

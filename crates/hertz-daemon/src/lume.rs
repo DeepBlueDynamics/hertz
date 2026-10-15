@@ -48,6 +48,7 @@ pub fn spawn(bus: &EventBus, cfg: Option<LumeConfig>, mock: bool) {
                 Ok(
                     ev @ (Event::Transcription { .. }
                     | Event::ServerTranscription { .. }
+                    | Event::Weather { .. }
                     | Event::SquelchEvent { .. }
                     | Event::SignalLevel { .. }
                     | Event::RecordingSaved { .. }),
@@ -317,6 +318,27 @@ impl Feed {
                     attrs.push(("recording", file_name(&r)));
                 }
                 self.logs.push(log_record("radio.transcript", &text, attrs));
+            }
+            Event::Weather {
+                dongle_id,
+                channel,
+                freq_hz,
+                text,
+                seconds,
+                signal_db,
+                ..
+            } => {
+                let mut attrs = vec![
+                    ("dongle", dongle_id),
+                    ("channel", channel),
+                    ("freq_mhz", mhz(freq_hz)),
+                    ("sample_s", format!("{seconds:.0}")),
+                    ("engine", "whistle".to_string()),
+                ];
+                if let Some(db) = signal_db {
+                    attrs.push(("signal_db", format!("{db:.1}")));
+                }
+                self.logs.push(log_record("radio.weather", &text, attrs));
             }
             Event::ServerTranscription {
                 dongle_id,

@@ -1165,6 +1165,9 @@ async fn run_tui(
                             let ch = channel.unwrap_or_else(|| "VFO".to_string());
                             state.push_transcript(format!("[{}/{}] -> {}", dongle_id, ch, text));
                         }
+                        HertzEvent::Weather { channel, text, .. } => {
+                            state.push_transcript(format!("[{} weather] -> {}", channel, text));
+                        }
                         HertzEvent::ServerTranscription {
                             dongle_id,
                             channel,

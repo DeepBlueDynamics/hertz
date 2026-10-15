@@ -19,6 +19,7 @@ pub mod server;
 pub mod speaker;
 pub mod spectrum;
 pub mod transcribe;
+pub mod weather;
 
 pub use audio::AudioFrame;
 pub use bus::EventBus;

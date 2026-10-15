@@ -63,6 +63,19 @@ pub enum Event {
         /// Server model, e.g. "medium".
         model: String,
     },
+    /// What a NOAA weather channel was saying, from a short sample.
+    Weather {
+        dongle_id: String,
+        channel: String,
+        freq_hz: u64,
+        text: String,
+        seconds: f32,
+        /// Mean signal level during the sample (dB).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal_db: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recording: Option<String>,
+    },
     Translation {
         dongle_id: String,
         channel: Option<String>,
@@ -262,6 +275,51 @@ pub struct DongleConfig {
     /// Monitor role: channel ids to scan (vhf_monitor-style hop, lock on activity).
     #[serde(default)]
     pub scan: Option<Vec<String>>,
+    /// Scanning monitor role: step off the scan now and then to record and
+    /// transcribe a NOAA weather broadcast.
+    #[serde(default)]
+    pub weather: Option<WeatherConfig>,
+}
+
+/// Weather sideband for a scanning dongle: every `every_minutes`, while no channel
+/// is active, tune each of `channels` for `sample_seconds`, transcribe what it
+/// says, and publish an `Event::Weather`. The marine scan pauses for that time.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WeatherConfig {
+    /// NOAA channel ids from the noaa-wx band plan (WX1 = 162.550 MHz).
+    #[serde(default = "default_weather_channels")]
+    pub channels: Vec<String>,
+    #[serde(default = "default_weather_every")]
+    pub every_minutes: u64,
+    #[serde(default = "default_weather_sample")]
+    pub sample_seconds: u64,
+    /// The first sample, this long after start.
+    #[serde(default = "default_weather_first")]
+    pub first_after_seconds: u64,
+}
+
+impl Default for WeatherConfig {
+    fn default() -> Self {
+        Self {
+            channels: default_weather_channels(),
+            every_minutes: default_weather_every(),
+            sample_seconds: default_weather_sample(),
+            first_after_seconds: default_weather_first(),
+        }
+    }
+}
+
+fn default_weather_channels() -> Vec<String> {
+    vec!["WX1".to_string()]
+}
+fn default_weather_every() -> u64 {
+    30
+}
+fn default_weather_sample() -> u64 {
+    30
+}
+fn default_weather_first() -> u64 {
+    20
 }
 
 fn default_dwell_ms() -> Option<u64> {

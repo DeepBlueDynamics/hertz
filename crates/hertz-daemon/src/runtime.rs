@@ -134,6 +134,9 @@ impl Daemon {
         let data_dir = std::path::PathBuf::from(&config.daemon.data_dir);
         let recorder =
             RecorderHandle::spawn(bus.clone(), data_dir.clone(), Arc::clone(&transcriber));
+        let weather_tx = config.dongles.iter().any(|d| d.weather.is_some()).then(|| {
+            crate::weather::spawn(bus.clone(), Arc::clone(&transcriber), data_dir.clone())
+        });
         crate::recorder::spawn_backfill(bus.clone(), transcriber, data_dir);
         if let Some(relay) = &config.relay {
             crate::relay::spawn(&bus, relay, live_keywords, live_transcripts);
@@ -182,6 +185,7 @@ impl Daemon {
                 dongle_id: id.clone(),
                 serial: dc.serial.clone(),
                 scan: dc.scan.clone().unwrap_or_default(),
+                weather: weather_for(dc, &id, weather_tx.as_ref()),
             };
 
             let sdr_cfg = sdr_config_for(dc, center_hz, freq_hz);
@@ -471,6 +475,7 @@ struct DongleLaunchCtx {
     serial: String,
     /// Monitor-role scan list (channel ids); empty = fixed frequency.
     scan: Vec<String>,
+    weather: Option<(hertz_types::WeatherConfig, crate::weather::WeatherTx)>,
 }
 
 /// Build the [`DspThread`] for an already-opened worker and spawn its DSP thread.
@@ -492,6 +497,7 @@ fn launch_dsp(
         shutdown: shutdown.clone(),
         channels: ctx.channels.clone(),
         scan: ctx.scan.clone(),
+        weather: ctx.weather.clone(),
     };
     let join = match ctx.role {
         DongleRole::Monitor => spawn_monitor_loop(dsp),
@@ -628,6 +634,23 @@ fn warn_out_of_span_channels(
         outside.len(),
         list
     );
+}
+
+/// The weather sideband for a dongle, when configured. It needs the scanning
+/// monitor role, since it borrows the scan loop's idle time.
+fn weather_for(
+    dc: &DongleConfig,
+    id: &str,
+    tx: Option<&crate::weather::WeatherTx>,
+) -> Option<(hertz_types::WeatherConfig, crate::weather::WeatherTx)> {
+    let w = dc.weather.clone()?;
+    let scanning =
+        dc.role == DongleRole::Monitor && dc.scan.as_ref().is_some_and(|s| !s.is_empty());
+    if !scanning {
+        warn!("dongle {id}: weather needs role = \"monitor\" with a scan list; ignoring it");
+        return None;
+    }
+    Some((w, tx?.clone()))
 }
 
 /// Pick the transcription engine from config. `whistle` runs Cactus Whistle on-device;
