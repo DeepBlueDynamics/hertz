@@ -19,6 +19,11 @@ record = true
 # bandplan = "marine-vhf-us"
 # frequency_hz = 156625000             # fixed frequency when not scanning
 # scan = ["68", "69", "71", "72"]       # hop these, lock while squelch is open
+# FRS/GMRS walkie-talkies (462-467 MHz) instead: a band group scans all 22
+# simplex channels (repeater inputs left out); ids like "gmrs-1" work too.
+# bandplan = "frs-gmrs"
+# frequency_hz = 462562500
+# scan = ["frs-gmrs"]
 # squelch_db = 6.0
 # record = true
 

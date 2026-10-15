@@ -652,6 +652,46 @@ fn poll_worker_events(dsp: &DspThread) {
 /// conversation are caught before the scan resumes (vhf_monitor AUTO_RESUME_SCAN_SEC).
 const SCAN_RESUME_AFTER: Duration = Duration::from_secs(5);
 
+/// Resolve a scan list to (channel id, frequency) in order. An entry is a channel id
+/// ("72", "gmrs-1") or a band group ("frs-gmrs", "noaa-wx"), which expands to that
+/// group's receive channels by frequency. Repeater inputs (label `*-INPUT`) are left
+/// out of a group, since the same traffic comes back on the repeater output; list
+/// them by id to scan them. Duplicates are dropped.
+pub fn scan_channels(db: &ChannelDb, scan: &[String]) -> Vec<(String, u32)> {
+    let mut out: Vec<(String, u32)> = Vec::new();
+    let mut push = |id: &str, freq: u64| {
+        if !out.iter().any(|(have, _)| have == id) {
+            out.push((id.to_string(), freq as u32));
+        }
+    };
+    for entry in scan {
+        if let Some(c) = db.get_by_id(entry) {
+            push(&c.id, c.freq_hz);
+            continue;
+        }
+        let mut group: Vec<_> = db
+            .get_by_group(entry)
+            .into_iter()
+            // The scanner demodulates NFM and locks while a squelch is open, so AM
+            // channels and always-on broadcasts (NOAA weather) can't be scanned.
+            .filter(|c| {
+                c.rx && !c.label.ends_with("-INPUT")
+                    && c.mode == hertz_types::Mode::Nfm
+                    && !c.continuous_carrier
+            })
+            .collect();
+        if group.is_empty() {
+            warn!("scan: {entry:?} is not a channel id or a band group with scannable NFM channels, skipping");
+            continue;
+        }
+        group.sort_by_key(|c| c.freq_hz);
+        for c in group {
+            push(&c.id, c.freq_hz);
+        }
+    }
+    out
+}
+
 /// Scanner: hop the monitor dongle through `dsp.scan`, one 200 ms dwell per channel
 /// (plus a 50 ms settle discard after each retune), and lock on any channel whose
 /// squelch opens. Each channel keeps its own pipeline, so noise floors and squelch
@@ -660,17 +700,7 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
     thread::Builder::new()
         .name(format!("dsp-scan-{}", dsp.control.snapshot().dongle_id))
         .spawn(move || {
-            let chans: Vec<(String, u32)> = dsp
-                .scan
-                .iter()
-                .filter_map(|id| match dsp.channels.get_by_id(id) {
-                    Some(c) => Some((c.id.clone(), c.freq_hz as u32)),
-                    None => {
-                        warn!("scan: unknown channel id {id:?}, skipping");
-                        None
-                    }
-                })
-                .collect();
+            let chans = scan_channels(&dsp.channels, &dsp.scan);
             if chans.is_empty() {
                 warn!("scan list has no known channels; scanner idle");
                 return;
@@ -882,4 +912,44 @@ fn sample_weather(
     }
     audio.truncate(want);
     (audio, (levels > 0).then(|| level_sum / levels as f32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db() -> ChannelDb {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bandplans");
+        hertz_channels::load_channels(dir, None).unwrap()
+    }
+
+    #[test]
+    fn frs_gmrs_group_scans_the_22_simplex_channels() {
+        let chans = scan_channels(&db(), &["frs-gmrs".to_string()]);
+        assert_eq!(chans.len(), 22, "{chans:?}");
+        assert!(chans.iter().all(|(id, _)| !id.starts_with("gmrs-rep")));
+        assert!(
+            chans.windows(2).all(|w| w[0].1 <= w[1].1),
+            "sorted by frequency"
+        );
+        assert_eq!(chans[0], ("gmrs-15".to_string(), 462_550_000));
+    }
+
+    #[test]
+    fn ids_and_groups_mix_without_duplicates() {
+        let scan = ["72", "gmrs-1", "frs-gmrs", "nope"].map(String::from);
+        let chans = scan_channels(&db(), &scan);
+        assert_eq!(chans[0].0, "72");
+        assert_eq!(chans[1].0, "gmrs-1");
+        assert_eq!(
+            chans.len(),
+            23,
+            "72 plus the 22 FRS/GMRS channels once each"
+        );
+    }
+
+    #[test]
+    fn weather_group_is_not_scannable() {
+        assert!(scan_channels(&db(), &["noaa-wx".to_string()]).is_empty());
+    }
 }

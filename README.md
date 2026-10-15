@@ -98,6 +98,32 @@ Bandplans (`bandplans/*.toml`, 419 channels across marine, NOAA WX, FRS/GMRS, MU
 ham 2 m/70 cm, CB, airband, railroad and public-safety interop) load from
 `HERTZ_BANDPLANS`, `./bandplans`, `../bandplans` or `/etc/hertz/bandplans`.
 
+A `scan` entry is a channel id (`"72"`, `"gmrs-1"`) or a band group, which expands
+to that group's NFM receive channels in frequency order. Repeater inputs, AM
+channels and continuous broadcasts (NOAA weather) are left out of a group.
+
+### FRS/GMRS walkie-talkies
+
+To listen to FRS and GMRS (462.550–467.725 MHz, the unlicensed and GMRS handhelds)
+instead of marine VHF, point the dongle at that band. Recording, transcription,
+the relay and Lume work the same way:
+
+```toml
+[[dongle]]
+serial = "00000001"
+role = "monitor"
+bandplan = "frs-gmrs"
+frequency_hz = 462562500
+scan = ["frs-gmrs"]           # the 22 simplex channels; or ids like "gmrs-1", "frs-8"
+squelch_db = 6.0
+record = true
+```
+
+A sweep of 22 channels takes about 5 s, so a short single call can be missed;
+list only the channels you use for a faster sweep. A marine antenna hears UHF
+poorly, so use one cut for 460 MHz if you can. One dongle covers one band; use a
+second dongle with its own `[[dongle]]` section for marine and FRS/GMRS together.
+
 ## How a transmission is handled
 
 1. **Squelch.** A frame opens the squelch when in-channel power clears the noise
