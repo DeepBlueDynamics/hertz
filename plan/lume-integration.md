@@ -38,10 +38,12 @@ hertzd tries these in order at startup, then again every 60 s while it has no
 Lume:
 
 1. `[lume] url` in the config, if set.
-2. Lume's discovery file (Lume-side item b, not built yet): `~/.lume/serve.json`,
-   or `<store>/serve.json` when `[lume] store` is set. It holds url, port, pid,
-   version, otlp on/off, and the token file's path. hertz ignores it if the pid
-   isn't running.
+2. Lume's discovery file (Lume-side item b, not built yet): `[lume]
+   discovery_file`, default `~/.lume/serve.json`. On HaLOS the Signal K plugin
+   writes it at `plugin-config-data/signalk-lume-ti/serve.json`, mounted read-only
+   into hertz with the token file. It holds url, port, pid, version, otlp on/off,
+   and the token file's path. hertz skips it when otlp is off. The pid check isn't
+   built yet; the health probe catches a stale file.
 3. A probe of `http://127.0.0.1:5863/health`. Until Lume item a ships, a bare 200
    counts as Lume. After it ships, the JSON must say `"service":"lume"` and
    `"otlp":true`.
@@ -53,6 +55,7 @@ No mDNS: a LAN needs a token anyway, so it would add moving parts for little.
 enabled = true                 # default true: discovery on, silent when no Lume
 url = "http://127.0.0.1:5863"  # optional; skips discovery
 token_file = "/data/lume-otlp-token"  # optional; bare token, one line, mode 600
+discovery_file = "/lume/serve.json"   # optional; default ~/.lume/serve.json
 instance = "viridis"           # service.instance.id; defaults to the host name
 ```
 
@@ -117,7 +120,13 @@ That's how a second process gets a token with no person involved.
 3. Tests against a mock OTLP server on 127.0.0.1 port 0. Test that nothing is sent
    when no Lume is found.
 4. Verify: key up on Ch 72, then `lume search "come in over"` finds the
-   transcript, and TI SQL shows `radio.squelch_open_s.channel.72`.
+   transcript (`SELECT ts_start, title, body FROM docs WHERE match(body, 'come in')`),
+   and `SELECT * FROM telemetry_agents` shows `"radio.squelch_open_s.channel.72"`.
+   OTLP metrics land in `telemetry_agents`, not `telemetry` (Lume decision D50).
+   Delta sums need `aggregationTemporality` 1; hertz sets it.
+
+   Done on Windows 2026-10-15 against `lume serve --otlp` 0.16.3: metrics arrive
+   every 10 s under `agent.urn:<host>`.
 
 **Lume (needs Kord's OK; Minor Canid builds it after 0.17.0):**
 
@@ -125,7 +134,7 @@ That's how a second process gets a token with no person involved.
   `{"service":"lume","version":"…","otlp":true,"auth":"none|token|nuts"}`. HEAD
   and old clients still get a bare 200.
 - **b.** `lume serve` and `ti ingest --serve` write a discovery file
-  (`~/.lume/serve.json`, or `<store>/serve.json`) with url, port, pid, version,
+  (`~/.lume/serve.json`; the plugin's at its data folder root) with url, port, pid, version,
   otlp and the token file path (never the token). Remove it on exit.
 - **c.** A Signal K plugin switch that turns on OTLP for hertz and creates the
   token file in its data folder.

@@ -92,14 +92,14 @@ pub fn discover(cfg: &LumeConfig, agent: &ureq::Agent) -> Option<Target> {
             via: "config",
         });
     }
-    if let Some((url, token_file)) = discovery_file() {
+    if let Some((url, token_file)) = discovery_file(cfg.discovery_file.as_deref()) {
         if is_lume(agent, &url) {
             let token =
                 token_from(cfg.token_file.as_deref()).or_else(|| token_from(token_file.as_deref()));
             return Some(Target {
                 url,
                 token,
-                via: "~/.lume/serve.json",
+                via: "discovery file",
             });
         }
     }
@@ -132,8 +132,11 @@ fn is_lume(agent: &ureq::Agent, url: &str) -> bool {
 
 /// Lume's discovery file: `{"url": ..., "token_file": ...}` (Lume writes it while
 /// `serve` runs; not in every version yet).
-fn discovery_file() -> Option<(String, Option<String>)> {
-    let path = home()?.join(".lume").join("serve.json");
+fn discovery_file(path: Option<&str>) -> Option<(String, Option<String>)> {
+    let path = match path {
+        Some(p) => expand(p)?,
+        None => home()?.join(".lume").join("serve.json"),
+    };
     let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
     if v["otlp"] == false {
         return None;
@@ -148,11 +151,16 @@ fn home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// `~/` expands to the home directory.
+fn expand(path: &str) -> Option<PathBuf> {
+    match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+        Some(rest) => Some(home()?.join(rest)),
+        None => Some(PathBuf::from(path)),
+    }
+}
+
 fn read_token(path: &str) -> Option<String> {
-    let path = match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
-        Some(rest) => home()?.join(rest),
-        None => PathBuf::from(path),
-    };
+    let path = expand(path)?;
     match std::fs::read_to_string(&path) {
         Ok(t) if !t.trim().is_empty() => Some(t.trim().to_string()),
         Ok(_) => None,
@@ -582,6 +590,31 @@ mod tests {
         let found = discover(&cfg, &agent()).expect("found");
         assert_eq!(found.url, url);
         assert_eq!(found.via, "config");
+    }
+
+    #[test]
+    fn discovery_file_gives_url_and_token() {
+        let (url, _) = fake_lume();
+        let dir = tempfile::tempdir().unwrap();
+        let token = dir.path().join("otlp-token");
+        std::fs::write(&token, "ahp_test\n").unwrap();
+        let file = dir.path().join("serve.json");
+        let serve = json!({ "url": url, "otlp": true, "token_file": token.to_str().unwrap() });
+        std::fs::write(&file, serve.to_string()).unwrap();
+        let cfg = LumeConfig {
+            discovery_file: Some(file.to_str().unwrap().into()),
+            ..Default::default()
+        };
+        let found = discover(&cfg, &agent()).expect("found");
+        assert_eq!(
+            (found.url.as_str(), found.via),
+            (url.as_str(), "discovery file")
+        );
+        assert_eq!(found.token.as_deref(), Some("ahp_test"));
+
+        // otlp off in the file: not a target.
+        std::fs::write(&file, json!({ "url": url, "otlp": false }).to_string()).unwrap();
+        assert_eq!(discovery_file(cfg.discovery_file.as_deref()), None);
     }
 
     #[test]

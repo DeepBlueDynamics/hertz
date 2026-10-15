@@ -353,6 +353,10 @@ pub struct LumeConfig {
     /// File holding a bearer token for Lume's OTLP endpoint (bare token, one line).
     #[serde(default)]
     pub token_file: Option<String>,
+    /// Lume's discovery file (`serve.json`); defaults to `~/.lume/serve.json`. On
+    /// HaLOS, the Signal K plugin's copy mounted into hertz.
+    #[serde(default)]
+    pub discovery_file: Option<String>,
     /// `service.instance.id` in Lume (the station); defaults to the host name.
     #[serde(default)]
     pub instance: Option<String>,
@@ -364,6 +368,7 @@ impl Default for LumeConfig {
             enabled: true,
             url: None,
             token_file: None,
+            discovery_file: None,
             instance: None,
         }
     }
