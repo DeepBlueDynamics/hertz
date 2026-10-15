@@ -18,6 +18,7 @@ use hertz_dsp::channelizer::{
     bytes_to_iq, design_lowpass_fir, detect_active_channels, estimate_noise_floor, extract_channel,
     ChannelProbe, FFT_DETECT_SIZE, LPF_CUTOFF_NORM, LPF_TAPS,
 };
+use hertz_dsp::classify::SignalClassification;
 use hertz_dsp::pipeline::{Pipeline, PipelineConfig, PipelineEvent, AUDIO_SAMPLE_RATE, SDR_RATE};
 use hertz_dsp::{AudioKind, Mode};
 use hertz_sdr::{WorkerEvent, WorkerHandle};
@@ -652,6 +653,33 @@ fn poll_worker_events(dsp: &DspThread) {
 /// conversation are caught before the scan resumes (vhf_monitor AUTO_RESUME_SCAN_SEC).
 const SCAN_RESUME_AFTER: Duration = Duration::from_secs(5);
 
+/// A squelch open this long is a stuck carrier, not a call.
+const SCAN_MAX_OPEN: Duration = Duration::from_secs(30);
+/// How long a nuisance channel (carrier or static, no voice) is skipped.
+const SCAN_LOCKOUT: Duration = Duration::from_secs(300);
+
+fn lock_out(locked_until: &mut [Option<Instant>], idx: usize, chans: &[(String, u32)], why: &str) {
+    if locked_until[idx].is_some_and(|t| Instant::now() < t) {
+        return;
+    }
+    locked_until[idx] = Some(Instant::now() + SCAN_LOCKOUT);
+    warn!(
+        "scan: Ch {} locked out for {} min ({why}, no voice)",
+        chans[idx].0,
+        SCAN_LOCKOUT.as_secs() / 60
+    );
+}
+
+/// The next channel after `idx` that isn't locked out; `idx + 1` if all are.
+fn next_channel(idx: usize, locked_until: &[Option<Instant>]) -> usize {
+    let n = locked_until.len();
+    let now = Instant::now();
+    (1..=n)
+        .map(|step| (idx + step) % n)
+        .find(|&i| locked_until[i].is_none_or(|t| now >= t))
+        .unwrap_or((idx + 1) % n)
+}
+
 /// Resolve a scan list to (channel id, frequency) in order. An entry is a channel id
 /// ("72", "gmrs-1") or a band group ("frs-gmrs", "noaa-wx"), which expands to that
 /// group's receive channels by frequency. Repeater inputs (label `*-INPUT`) are left
@@ -720,6 +748,9 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             const SETTLE_BYTES: usize = crate::runtime::SCAN_READ_IQ_PAIRS * 2;
             let mut settle_bytes = SETTLE_BYTES;
             let mut last_open: Option<Instant> = None;
+            // When the current squelch opened, and per channel the end of a lockout.
+            let mut open_since: Option<Instant> = None;
+            let mut locked_until: Vec<Option<Instant>> = vec![None; chans.len()];
             let weather: Vec<(String, u32)> = dsp
                 .weather
                 .iter()
@@ -776,8 +807,17 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     if !pipeline.is_squelch_open() && last_open.is_none() {
                         pipeline.clear_prebuffer();
                     }
+                    let was_open = pipeline.is_squelch_open();
                     for pe in pipeline.process_buffer(&iq) {
                         dispatch_monitor_event(&dsp, &snap, freq, &pe);
+                        // A squelch that closes on a carrier or static, not a voice,
+                        // locks the channel out so it can't hold the scanner.
+                        if let PipelineEvent::SquelchClosed { classification, .. } = &pe {
+                            if *classification != SignalClassification::Voice {
+                                lock_out(&mut locked_until, idx, &chans, classification.label());
+                                last_open = None;
+                            }
+                        }
                     }
                     if let Some(bins) = spectrum.maybe_emit(&iq) {
                         let _ = dsp.spectrum_tx.send(SpectrumFrame {
@@ -790,10 +830,35 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         });
                     }
 
-                    // Lock while open; linger after close for replies; else hop.
+                    // Lock while open; linger after close for replies; else hop. A
+                    // squelch open longer than any call is a stuck carrier: close it,
+                    // lock the channel out and move on.
                     if pipeline.is_squelch_open() {
-                        last_open = Some(Instant::now());
-                        continue;
+                        let since = *open_since.get_or_insert_with(Instant::now);
+                        if since.elapsed() < SCAN_MAX_OPEN {
+                            last_open = Some(Instant::now());
+                            continue;
+                        }
+                        let noise_floor = pipeline.noise_floor_db();
+                        pipeline.reset();
+                        dispatch_monitor_event(
+                            &dsp,
+                            &snap,
+                            freq,
+                            &PipelineEvent::SquelchClosed {
+                                signal_db: noise_floor,
+                                noise_floor,
+                                classification: SignalClassification::Carrier,
+                            },
+                        );
+                        lock_out(&mut locked_until, idx, &chans, "stuck open");
+                        last_open = None;
+                    }
+                    if !was_open || !pipeline.is_squelch_open() {
+                        open_since = None;
+                    }
+                    if locked_until[idx].is_some_and(|t| Instant::now() < t) {
+                        last_open = None;
                     }
                     if let Some(t) = last_open {
                         if t.elapsed() < SCAN_RESUME_AFTER {
@@ -834,7 +899,7 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         }
                     }
                     if chans.len() > 1 {
-                        idx = (idx + 1) % chans.len();
+                        idx = next_channel(idx, &locked_until);
                         let _ = dsp.worker.retune(chans[idx].1);
                         acc.clear();
                         drain_into(&mut consumer, &mut acc);
@@ -951,5 +1016,23 @@ mod tests {
     #[test]
     fn weather_group_is_not_scannable() {
         assert!(scan_channels(&db(), &["noaa-wx".to_string()]).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod lockout_tests {
+    use super::*;
+
+    #[test]
+    fn hop_skips_locked_out_channels() {
+        let later = Some(Instant::now() + Duration::from_secs(60));
+        let locked = vec![None, later, later, None];
+        assert_eq!(next_channel(0, &locked), 3);
+        assert_eq!(next_channel(3, &locked), 0);
+        // All locked: keep scanning in order rather than stall.
+        assert_eq!(next_channel(1, &[later, later]), 0);
+        // An expired lockout is scanned again.
+        let past = Some(Instant::now() - Duration::from_secs(1));
+        assert_eq!(next_channel(0, &[None, past]), 1);
     }
 }

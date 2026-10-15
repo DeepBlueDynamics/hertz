@@ -255,6 +255,15 @@ struct ChannelStats {
     last_call: Option<(f64, f32, Option<f32>)>,
 }
 
+/// A finished voice call, for the per-call metrics.
+struct CallPoint {
+    channel: String,
+    end: String,
+    duration_s: f64,
+    signal_db: f32,
+    noise_floor_db: Option<f32>,
+}
+
 pub struct Feed {
     /// None while no Lume is found; records accumulate meanwhile.
     target: Option<Target>,
@@ -262,6 +271,8 @@ pub struct Feed {
     agent: ureq::Agent,
     logs: Vec<Value>,
     channels: HashMap<String, ChannelStats>,
+    /// Voice calls finished since the last metrics post, sent as per-call gauges.
+    calls: Vec<CallPoint>,
     window_start: SystemTime,
 }
 
@@ -273,6 +284,7 @@ impl Feed {
             agent,
             logs: Vec::new(),
             channels: HashMap::new(),
+            calls: Vec::new(),
             window_start: SystemTime::now(),
         }
     }
@@ -460,6 +472,15 @@ impl Feed {
                     let peak = stats.call_peak_db.take().unwrap_or(signal_db);
                     stats.last_call = Some((secs, peak, stats.noise_floor_db));
                     duration = Some(secs);
+                    if classification == "VOICE" {
+                        self.calls.push(CallPoint {
+                            channel: label.clone(),
+                            end: nanos(SystemTime::now()),
+                            duration_s: secs,
+                            signal_db: peak,
+                            noise_floor_db: stats.noise_floor_db,
+                        });
+                    }
                 }
                 let floor = stats.noise_floor_db;
                 let body = format!(
@@ -592,7 +613,26 @@ impl Feed {
             open_s.push(json!({ "startTimeUnixNano": start, "timeUnixNano": end, "asDouble": secs, "attributes": attrs }));
             tx.push(json!({ "startTimeUnixNano": start, "timeUnixNano": end, "asInt": s.transmissions.to_string(), "attributes": attrs }));
         }
-        if signal.is_empty() && open_s.is_empty() {
+        // Per-call gauges at each call's end, and a per-channel count of calls:
+        // Lume makes these columns (radio.call.duration_s.channel.72, ...).
+        let (mut call_dur, mut call_sig, mut call_floor) = (Vec::new(), Vec::new(), Vec::new());
+        let mut calls_by_channel: HashMap<&str, u64> = HashMap::new();
+        for call in &self.calls {
+            let attrs = json!([kv("channel", &call.channel)]);
+            let point =
+                |v: f64| json!({ "timeUnixNano": call.end, "asDouble": v, "attributes": attrs });
+            call_dur.push(point(call.duration_s));
+            call_sig.push(point(call.signal_db as f64));
+            if let Some(db) = call.noise_floor_db {
+                call_floor.push(point(db as f64));
+            }
+            *calls_by_channel.entry(&call.channel).or_default() += 1;
+        }
+        let calls: Vec<Value> = calls_by_channel
+            .iter()
+            .map(|(ch, n)| json!({ "startTimeUnixNano": start, "timeUnixNano": end, "asInt": n.to_string(), "attributes": [kv("channel", ch)] }))
+            .collect();
+        if signal.is_empty() && open_s.is_empty() && calls.is_empty() {
             self.window_start = now;
             return Ok(());
         }
@@ -605,10 +645,15 @@ impl Feed {
                 { "name": "radio.noise_floor_db", "unit": "dB", "gauge": { "dataPoints": noise } },
                 { "name": "radio.squelch_open_s", "unit": "s", "sum": sum(open_s) },
                 { "name": "radio.transmissions", "sum": sum(tx) },
+                { "name": "radio.calls", "sum": sum(calls) },
+                { "name": "radio.call.duration_s", "unit": "s", "gauge": { "dataPoints": call_dur } },
+                { "name": "radio.call.signal_db", "unit": "dB", "gauge": { "dataPoints": call_sig } },
+                { "name": "radio.call.noise_floor_db", "unit": "dB", "gauge": { "dataPoints": call_floor } },
             ]}],
         }]});
         let result = self.post("/v1/metrics", &body);
         if result.is_ok() {
+            self.calls.clear();
             for s in self.channels.values_mut() {
                 s.open_s = 0.0;
                 s.transmissions = 0;
@@ -983,6 +1028,43 @@ mod tests {
         assert_eq!(get("noise_floor_db")["doubleValue"], -20.0);
         assert_eq!(get("freq_mhz")["doubleValue"], 462.5625);
         assert!(get("duration_s")["doubleValue"].as_f64().unwrap() >= 0.0);
+    }
+
+    #[test]
+    fn voice_calls_become_per_call_metrics() {
+        let (url, seen) = fake_lume();
+        let mut feed = Feed::new(
+            Some(Target {
+                url,
+                token: None,
+                via: "test",
+            }),
+            "x".into(),
+            agent(),
+        );
+        let squelch = |open, classification: &str| Event::SquelchEvent {
+            dongle_id: "d".into(),
+            channel: Some("gmrs-1".into()),
+            freq_hz: 462_562_500,
+            open,
+            signal_db: -5.0,
+            classification: classification.into(),
+        };
+        feed.take(squelch(true, "VOICE"));
+        feed.take(squelch(false, "VOICE"));
+        feed.take(squelch(true, "CARRIER"));
+        feed.take(squelch(false, "CARRIER"));
+        assert_eq!(feed.calls.len(), 1, "only the voice call counts");
+        assert!(feed.flush_metrics().is_ok());
+        let metrics = &seen.lock().unwrap()[0].1;
+        for name in [
+            "radio.calls",
+            "radio.call.duration_s",
+            "radio.call.signal_db",
+        ] {
+            assert!(metrics.contains(name), "{name} missing");
+        }
+        assert!(feed.calls.is_empty());
     }
 
     #[test]
