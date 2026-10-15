@@ -422,7 +422,9 @@ pub enum SpectrumSel {
 }
 
 fn parse_filter(q: &WsQuery) -> StreamFilter {
-    let event_types: std::collections::HashSet<String> = q
+    // An empty set means every event type; `events=all` (what hertz sends) is the
+    // same, not a type named "all".
+    let mut event_types: std::collections::HashSet<String> = q
         .events
         .as_deref()
         .unwrap_or("")
@@ -430,6 +432,9 @@ fn parse_filter(q: &WsQuery) -> StreamFilter {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect();
+    if event_types.contains("all") {
+        event_types.clear();
+    }
     let audio = match q.audio.as_deref().unwrap_or("none") {
         "none" | "" => AudioSel::None,
         "all" => AudioSel::All,
@@ -626,4 +631,25 @@ fn wav_duration(path: &std::path::Path) -> Option<f32> {
     let spec = reader.spec();
     let n = reader.into_samples::<i16>().count() as f32;
     Some(n / spec.sample_rate as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn query(events: Option<&str>) -> WsQuery {
+        WsQuery {
+            events: events.map(str::to_string),
+            audio: None,
+            spectrum: None,
+        }
+    }
+
+    #[test]
+    fn events_all_passes_every_event_type() {
+        assert!(parse_filter(&query(Some("all"))).event_types.is_empty());
+        assert!(parse_filter(&query(None)).event_types.is_empty());
+        let some = parse_filter(&query(Some("squelch,transcription"))).event_types;
+        assert!(some.contains("squelch") && some.contains("transcription") && some.len() == 2);
+    }
 }

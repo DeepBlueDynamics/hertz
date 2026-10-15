@@ -573,6 +573,7 @@ async fn run_tui(
     token: Option<String>,
 ) -> anyhow::Result<()> {
     let config = Config::load();
+    let daemon_url = connect_url.clone();
 
     // Suppress stderr to prevent stray ALSA configuration messages from corrupting the screen
     redirect_stderr_to_null();
@@ -1067,9 +1068,15 @@ async fn run_tui(
         while let Ok(evt) = event_rx.try_recv() {
             match evt {
                 TuiEvent::ConnectionState(cs) => {
+                    let was_offline = state.conn_state == ConnectionState::Offline;
                     state.conn_state = cs;
                     match cs {
-                        ConnectionState::Offline => state.set_status("Daemon connection: OFFLINE"),
+                        // Retries flip back to Connecting every few seconds; keep the
+                        // reason on screen instead of a bare "Connecting".
+                        ConnectionState::Offline => state.set_status(&format!(
+                            "hertzd is not running at {daemon_url}. Start it with `hertzd <config.toml>`; retrying..."
+                        )),
+                        ConnectionState::Connecting if was_offline => {}
                         ConnectionState::Connecting => state.set_status("Connecting to daemon..."),
                         ConnectionState::Connected => state.set_status("Connected to daemon."),
                     }
