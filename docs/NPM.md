@@ -37,13 +37,12 @@ Pushing a `v*` tag by hand runs `release.yml` alone.
    package; the release and `package-cli.cjs` refuse to run without it. `rusb`
    statically links libusb (LGPL-2.1); the README's License section says so.
 2. **First publish by hand.** npm only lets you add a trusted publisher to a
-   package that exists. Run the release once, download the `npm-cli` artifact,
-   then `npm login` (browser and security key, in a real terminal) and
-   `npm publish ./<file>.tgz --access public` for all six tarballs, platform
-   packages first.
+   package that exists. Run the release once, then publish it with
+   `scripts/npm-publish.ps1` (below). Done for 0.2.2.
 3. **Trusted publishers.** The first CI publish fails with E404 until this is
    done. For each of the six packages, trust both workflows. npm checks the
-   calling workflow, which is `bump-version.yml` when it starts the release:
+   calling workflow, which is `bump-version.yml` when it starts the release.
+   `pwsh scripts/npm-publish.ps1 -Trust` does this, or by hand:
 
    ```sh
    for pkg in hertz hertz-linux-x64 hertz-linux-arm64 hertz-darwin-arm64 hertz-darwin-x64 hertz-win32-x64; do
@@ -58,6 +57,30 @@ Pushing a `v*` tag by hand runs `release.yml` alone.
    `DeepBlueDynamics`, repo `hertz`, and the environment left empty. Check the
    file names character by character: a mismatch fails with E404, not 403. Lume
    lost a release to `bump-verion.yml`.
+
+## Publishing by hand
+
+If a release's **Publish to npm** job fails (no trusted publisher yet, an npm
+outage), publish that release from your own npm account. You need `gh` logged in
+to GitHub, Node, and npm access to the `@deepbluedynamics` scope. In PowerShell
+(`pwsh`, Windows, macOS or Linux), from the repo root:
+
+```powershell
+pwsh scripts/npm-publish.ps1                    # the latest GitHub Release
+pwsh scripts/npm-publish.ps1 -Version 0.2.3     # a specific version
+pwsh scripts/npm-publish.ps1 -Trust             # also set up trusted publishing
+```
+
+The script downloads the `npm-cli` artifact (the six tarballs) from the release
+run that built that version, runs `npm login` if you're logged out, and publishes
+the platform packages and then the wrapper. For each `npm login` and
+`npm publish`, press Enter and approve in the browser with your security key.
+Packages already on npm are skipped, so if it stops partway, run it again. Run
+artifacts expire after 90 days; after that, rerun the release.
+
+Check the result with `npm install -g @deepbluedynamics/hertz` then
+`hertz --version`. Without `-g`, npm installs into the nearest `package.json`
+and puts nothing on your PATH.
 
 ## Running hertzd as a service
 
