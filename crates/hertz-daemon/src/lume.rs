@@ -248,6 +248,11 @@ struct ChannelStats {
     open_since: Option<Instant>,
     open_s: f64,
     transmissions: u64,
+    /// Strongest signal while the current call's squelch is open.
+    call_peak_db: Option<f32>,
+    /// The last finished call: (duration s, peak signal dB, noise floor dB). Its
+    /// transcript arrives after the squelch closes and carries these.
+    last_call: Option<(f64, f32, Option<f32>)>,
 }
 
 pub struct Feed {
@@ -351,6 +356,7 @@ impl Feed {
                     ("freq_mhz", mhz(freq_hz)),
                     ("engine", "whistle".to_string()),
                 ];
+                self.push_call_stats(&mut attrs, channel.as_deref(), freq_hz);
                 if let Some(c) = &channel {
                     attrs.push(("channel", c.clone()));
                 }
@@ -424,6 +430,7 @@ impl Feed {
                     ("model", model),
                     ("on_device", on_device),
                 ];
+                self.push_call_stats(&mut attrs, channel.as_deref(), freq_hz);
                 if let Some(c) = channel {
                     attrs.push(("channel", c));
                 }
@@ -442,12 +449,19 @@ impl Feed {
             } => {
                 let label = channel.clone().unwrap_or_else(|| mhz(freq_hz));
                 let stats = self.channels.entry(label.clone()).or_default();
+                let mut duration = None;
                 if open {
                     stats.open_since.get_or_insert(now);
                     stats.transmissions += 1;
+                    stats.call_peak_db = Some(signal_db);
                 } else if let Some(since) = stats.open_since.take() {
-                    stats.open_s += now.duration_since(since).as_secs_f64();
+                    let secs = now.duration_since(since).as_secs_f64();
+                    stats.open_s += secs;
+                    let peak = stats.call_peak_db.take().unwrap_or(signal_db);
+                    stats.last_call = Some((secs, peak, stats.noise_floor_db));
+                    duration = Some(secs);
                 }
+                let floor = stats.noise_floor_db;
                 let body = format!(
                     "squelch {} Ch {label}",
                     if open { "open" } else { "closed" }
@@ -459,6 +473,12 @@ impl Feed {
                     ("classification", classification),
                     ("open", open.to_string()),
                 ];
+                if let Some(secs) = duration {
+                    attrs.push(("duration_s", format!("{secs:.1}")));
+                }
+                if let Some(db) = floor {
+                    attrs.push(("noise_floor_db", format!("{db:.1}")));
+                }
                 if let Some(c) = channel {
                     attrs.push(("channel", c));
                 }
@@ -477,6 +497,10 @@ impl Feed {
                     .or_default();
                 stats.signal_db = Some(signal_db);
                 stats.noise_floor_db = Some(noise_floor);
+                if stats.open_since.is_some() {
+                    stats.call_peak_db =
+                        Some(stats.call_peak_db.map_or(signal_db, |p| p.max(signal_db)));
+                }
             }
             Event::RecordingSaved {
                 dongle_id,
@@ -496,6 +520,24 @@ impl Feed {
                     .push(log_record("radio.recording", &file_name(&filename), attrs));
             }
             _ => {}
+        }
+    }
+
+    /// The finished call's duration, peak signal and noise floor on this channel.
+    fn push_call_stats(
+        &self,
+        attrs: &mut Vec<(&str, String)>,
+        channel: Option<&str>,
+        freq_hz: u64,
+    ) {
+        let label = channel.map(str::to_string).unwrap_or_else(|| mhz(freq_hz));
+        let Some((secs, peak, floor)) = self.channels.get(&label).and_then(|s| s.last_call) else {
+            return;
+        };
+        attrs.push(("duration_s", format!("{secs:.1}")));
+        attrs.push(("signal_db", format!("{peak:.1}")));
+        if let Some(db) = floor {
+            attrs.push(("noise_floor_db", format!("{db:.1}")));
         }
     }
 
@@ -607,7 +649,7 @@ enum Failure {
 
 fn log_record(event_name: &str, body: &str, attrs: Vec<(&str, String)>) -> Value {
     let mut attributes = vec![kv("event.name", event_name)];
-    attributes.extend(attrs.iter().map(|(k, v)| kv(k, v)));
+    attributes.extend(attrs.iter().map(|(k, v)| typed_kv(k, v)));
     json!({
         "timeUnixNano": nanos(SystemTime::now()),
         "eventName": event_name,
@@ -616,6 +658,23 @@ fn log_record(event_name: &str, body: &str, attrs: Vec<(&str, String)>) -> Value
         "body": { "stringValue": body },
         "attributes": attributes,
     })
+}
+
+/// Attributes that are numbers go as OTLP doubles, so Lume can compare and sort
+/// them; everything else is a string.
+const NUMERIC: &[&str] = &[
+    "freq_mhz",
+    "signal_db",
+    "noise_floor_db",
+    "duration_s",
+    "sample_s",
+];
+
+fn typed_kv(key: &str, value: &str) -> Value {
+    match value.parse::<f64>() {
+        Ok(n) if NUMERIC.contains(&key) => json!({ "key": key, "value": { "doubleValue": n } }),
+        _ => kv(key, value),
+    }
 }
 
 fn kv(key: &str, value: &str) -> Value {
@@ -630,7 +689,8 @@ fn nanos(t: SystemTime) -> String {
 }
 
 fn mhz(freq_hz: u64) -> String {
-    format!("{:.3}", freq_hz as f64 / 1e6)
+    // Four places: FRS/GMRS channels sit on 12.5 kHz steps (462.5625 MHz).
+    format!("{:.4}", freq_hz as f64 / 1e6)
 }
 
 fn file_name(path: &str) -> String {
@@ -873,6 +933,56 @@ mod tests {
         assert_eq!(r["eventName"], "radio.relay");
         let body = r["body"]["stringValue"].as_str().unwrap();
         assert!(body.starts_with("-> Yucky Fowl") && body.contains("Lume is not running"));
+    }
+
+    #[test]
+    fn transcript_carries_the_calls_numbers_as_numbers() {
+        let mut feed = Feed::new(None, "x".into(), agent());
+        let squelch = |open, signal_db| Event::SquelchEvent {
+            dongle_id: "d".into(),
+            channel: Some("gmrs-1".into()),
+            freq_hz: 462_562_500,
+            open,
+            signal_db,
+            classification: "VOICE".into(),
+        };
+        let level = |signal_db| Event::SignalLevel {
+            dongle_id: "d".into(),
+            channel: Some("gmrs-1".into()),
+            freq_hz: 462_562_500,
+            signal_db,
+            noise_floor: -20.0,
+            squelch_open: true,
+            audio_flatness: 0.2,
+        };
+        feed.take(level(-20.0));
+        feed.take(squelch(true, -8.0));
+        feed.take(level(-3.5));
+        std::thread::sleep(Duration::from_millis(30));
+        feed.take(squelch(false, -14.0));
+        feed.take(Event::Transcription {
+            dongle_id: "d".into(),
+            channel: Some("gmrs-1".into()),
+            freq_hz: 462_562_500,
+            text: "Zulu Echo, come in.".into(),
+            recording: None,
+        });
+        let attrs = feed.logs.last().unwrap()["attributes"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let get = |k: &str| {
+            attrs
+                .iter()
+                .find(|a| a["key"] == k)
+                .map(|a| a["value"].clone())
+                .unwrap()
+        };
+        assert_eq!(get("channel")["stringValue"], "gmrs-1");
+        assert_eq!(get("signal_db")["doubleValue"], -3.5, "the call's peak");
+        assert_eq!(get("noise_floor_db")["doubleValue"], -20.0);
+        assert_eq!(get("freq_mhz")["doubleValue"], 462.5625);
+        assert!(get("duration_s")["doubleValue"].as_f64().unwrap() >= 0.0);
     }
 
     #[test]
