@@ -1185,8 +1185,14 @@ fn hot_groups(
     hot
 }
 
-/// True when another channel of the group within NEIGHBOUR_HZ of `m` is
-/// NEIGHBOUR_MARGIN_DB stronger in this frame.
+/// A strong call raises the level across its group: this much stronger anywhere in
+/// the group and a weaker channel's open is the call's splash, not a call.
+const GROUP_SPLASH_DB: f32 = 12.0;
+
+/// True when this open on `m` is another channel's signal: a channel within
+/// NEIGHBOUR_HZ is NEIGHBOUR_MARGIN_DB stronger (12.5 kHz spill), or any channel of
+/// the group is GROUP_SPLASH_DB stronger (a strong call lifting the group; seen at
+/// 37.5 kHz on gmrs-17 while gmrs-1 was keyed).
 fn stronger_member(
     iq: &[Complex32],
     center: u32,
@@ -1197,9 +1203,16 @@ fn stronger_member(
     let at = |i: usize| power_at_db(iq, chans[i].1 as f32 - center as f32);
     let own = at(m);
     members.iter().any(|&o| {
-        o != m
-            && (chans[o].1 as i64 - chans[m].1 as i64).abs() <= NEIGHBOUR_HZ
-            && at(o) > own + NEIGHBOUR_MARGIN_DB
+        if o == m {
+            return false;
+        }
+        let near = (chans[o].1 as i64 - chans[m].1 as i64).abs() <= NEIGHBOUR_HZ;
+        let margin = if near {
+            NEIGHBOUR_MARGIN_DB
+        } else {
+            GROUP_SPLASH_DB
+        };
+        at(o) > own + margin
     })
 }
 
@@ -1393,8 +1406,8 @@ mod neighbour_tests {
             &[0, 1, 2],
             &frs()
         ));
-        // gmrs-2 is 25 kHz from gmrs-1: not a neighbour to check.
-        assert!(!stronger_member(
+        // A strong call on gmrs-2, 25 kHz away: gmrs-1's open is its splash.
+        assert!(stronger_member(
             &tone(25_000.0),
             462_562_500,
             1,
@@ -1530,5 +1543,36 @@ mod group_tests {
         let now = Instant::now();
         let active = [None, Some(now), Some(now - Duration::from_secs(3600))];
         assert_eq!(hot_groups(&active, &[0], now), vec![0, 1]);
+    }
+}
+
+#[cfg(test)]
+mod splash_tests {
+    use super::*;
+
+    #[test]
+    fn a_strong_call_doesnt_open_the_rest_of_its_group() {
+        // gmrs-1 keyed strongly; gmrs-17 is 37.5 kHz away in the same group.
+        let chans: Vec<(String, u32)> = vec![
+            ("gmrs-1".into(), 462_562_500),
+            ("gmrs-17".into(), 462_600_000),
+        ];
+        let center = 462_581_250u32;
+        let step =
+            |f: u32| 2.0 * std::f32::consts::PI * (f as f32 - center as f32) / SDR_RATE as f32;
+        let iq: Vec<Complex32> = (0..12_000)
+            .map(|n| {
+                Complex32::from_polar(0.5, n as f32 * step(462_562_500))
+                    + Complex32::from_polar(0.05, n as f32 * step(462_600_000))
+            })
+            .collect();
+        assert!(
+            stronger_member(&iq, center, 1, &[0, 1], &chans),
+            "gmrs-17 is splash"
+        );
+        assert!(
+            !stronger_member(&iq, center, 0, &[0, 1], &chans),
+            "gmrs-1 is the call"
+        );
     }
 }

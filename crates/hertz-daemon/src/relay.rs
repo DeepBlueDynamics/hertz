@@ -495,8 +495,24 @@ impl Relay {
             debug!("RELAY | Ch {ch} | transcription service down");
             return None;
         }
+        let started = Instant::now();
         match service.transcribe(Path::new(wav)) {
             Ok(t) => {
+                // The counterpart of the recorder's "transcribed ..." line.
+                info!(
+                    "relay: server transcribed {} ({}) in {:.1}s: {}",
+                    Path::new(wav)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy())
+                        .unwrap_or_default(),
+                    self.verify_model,
+                    started.elapsed().as_secs_f32(),
+                    if t.trim().is_empty() {
+                        "(no speech)"
+                    } else {
+                        t.trim()
+                    }
+                );
                 self.publish_server_transcript(call, &t);
                 Some(t)
             }
