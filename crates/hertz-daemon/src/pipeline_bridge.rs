@@ -334,6 +334,15 @@ pub fn spawn_channelized_loop(
                         FFT_DETECT_SIZE,
                     );
 
+                    // A call spills into channels 12.5 kHz away (FRS/GMRS spacing);
+                    // keep only the strongest of neighbours, so one call isn't heard,
+                    // recorded and relayed on three channels.
+                    let detected = strongest_of_neighbours(detected, |key| {
+                        dsp.channels
+                            .get_by_id(&id_key_to_string(key))
+                            .map(|c| c.freq_hz)
+                    });
+
                     // Create slots for newly detected channels + keep the tap alive.
                     for &(id_key, _power) in &detected {
                         if let Some(ch) = dsp.channels.get_by_id(&id_key_to_string(id_key)) {
@@ -672,6 +681,26 @@ fn poll_worker_events(dsp: &DspThread) {
 /// Keep listening on a channel this long after its squelch closes, so replies in a
 /// conversation are caught before the scan resumes (vhf_monitor AUTO_RESUME_SCAN_SEC).
 const SCAN_RESUME_AFTER: Duration = Duration::from_secs(5);
+
+/// Of detected channels within NEIGHBOUR_HZ of a stronger detected channel, drop
+/// the weaker: they're the same call seen through the detector's window.
+fn strongest_of_neighbours(
+    detected: Vec<(u32, f32)>,
+    freq_of: impl Fn(u32) -> Option<u64>,
+) -> Vec<(u32, f32)> {
+    let with_freq: Vec<(u32, f32, Option<u64>)> =
+        detected.iter().map(|&(k, p)| (k, p, freq_of(k))).collect();
+    with_freq
+        .iter()
+        .filter(|&&(_, p, f)| {
+            let Some(f) = f else { return true };
+            !with_freq.iter().any(|&(_, q, g)| {
+                g.is_some_and(|g| g != f && (g as i64 - f as i64).abs() <= NEIGHBOUR_HZ && q > p)
+            })
+        })
+        .map(|&(k, p, _)| (k, p))
+        .collect()
+}
 
 /// Scan neighbours this close are checked when a squelch opens.
 const NEIGHBOUR_HZ: i64 = 15_000;
@@ -1275,5 +1304,32 @@ mod live_squelch_tests {
         assert_eq!(p.squelch_threshold_db(), floor + 10.0);
         p.set_open_floor(Some(-10.0));
         assert_eq!(p.squelch_threshold_db(), (floor + 10.0).max(-10.0));
+    }
+}
+
+#[cfg(test)]
+mod wideband_neighbour_tests {
+    use super::*;
+
+    #[test]
+    fn one_call_is_one_channel() {
+        // gmrs-15 / gmrs-1 / gmrs-16 at 12.5 kHz steps; the call is on gmrs-1.
+        let freqs = [
+            (1u32, 462_550_000u64),
+            (2, 462_562_500),
+            (3, 462_575_000),
+            (4, 462_650_000),
+        ];
+        let freq_of = |k: u32| freqs.iter().find(|f| f.0 == k).map(|f| f.1);
+        let detected = vec![(1, -12.0), (2, -2.0), (3, -11.0), (4, -9.0)];
+        let kept: Vec<u32> = strongest_of_neighbours(detected, freq_of)
+            .into_iter()
+            .map(|d| d.0)
+            .collect();
+        assert_eq!(
+            kept,
+            vec![2, 4],
+            "gmrs-1 wins over its neighbours; a separate call 75 kHz away stays"
+        );
     }
 }
