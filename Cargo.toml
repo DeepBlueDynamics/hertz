@@ -9,7 +9,13 @@ members = [
     "crates/hertz-tui",
     "crates/hertz-tx",
     "crates/hertz-relay",
+    "crates/whistle",
 ]
+
+# One version for every hertz crate; scripts/bump-version.cjs sets it.
+[workspace.package]
+version = "0.2.0"
+license = "BSD-3-Clause"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }

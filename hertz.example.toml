@@ -1,6 +1,6 @@
 # /etc/hertz/hertz.toml
 [daemon]
-listen = "0.0.0.0:9080"
+listen = "127.0.0.1:9080"           # this machine only; "0.0.0.0:9080" serves the LAN (set auth_token)
 data_dir = "/data"                    # recordings/, transcriptions/, logs/, history/
 auth_token = "env:HERTZ_TOKEN"        # required for non-localhost + all MCP writes
 

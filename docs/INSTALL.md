@@ -10,9 +10,7 @@ only has to let Hertz claim the USB device.
 | **Windows** | WinUSB driver via Zadig | Development, and the validated live setup |
 | **macOS** | None | Development, or a client for a remote daemon |
 
-All hosts need a Rust toolchain (`rust-toolchain.toml` pins it) and the `whistle`
-crate checked out next to this repo at `../forest/whistle` (it is a path
-dependency of `hertz-daemon`).
+All hosts need a Rust toolchain (`rust-toolchain.toml` pins it).
 
 Plug dongles into a **powered USB hub**: they draw enough current to brown out
 host controllers.

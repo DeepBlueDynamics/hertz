@@ -18,6 +18,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let argv: Vec<String> = std::env::args().collect();
+    if argv.iter().any(|a| a == "--version" || a == "-V") {
+        println!("hertzd {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     // Optional `--mock`: boot a MockFactory so the binary runs and serves with no
     // hardware attached (smoke-test the network surface / `doctor`).
     let mock_mode = argv.iter().any(|a| a == "--mock");
