@@ -1,6 +1,6 @@
 {
   "name": "@deepbluedynamics/hertz",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Hertz: a scanning radio receiver for RTL-SDR dongles with on-device transcription. The hertzd daemon and the hertz console as prebuilt binaries.",
   "keywords": [
     "sdr",
@@ -37,10 +37,10 @@
     "node": ">=18.0.0"
   },
   "optionalDependencies": {
-    "@deepbluedynamics/hertz-darwin-arm64": "0.2.2",
-    "@deepbluedynamics/hertz-darwin-x64": "0.2.2",
-    "@deepbluedynamics/hertz-linux-arm64": "0.2.2",
-    "@deepbluedynamics/hertz-linux-x64": "0.2.2",
-    "@deepbluedynamics/hertz-win32-x64": "0.2.2"
+    "@deepbluedynamics/hertz-darwin-arm64": "0.2.3",
+    "@deepbluedynamics/hertz-darwin-x64": "0.2.3",
+    "@deepbluedynamics/hertz-linux-arm64": "0.2.3",
+    "@deepbluedynamics/hertz-linux-x64": "0.2.3",
+    "@deepbluedynamics/hertz-win32-x64": "0.2.3"
   }
 }

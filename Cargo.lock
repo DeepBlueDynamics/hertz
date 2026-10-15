@@ -895,7 +895,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hertz-channels"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "hertz-types",
@@ -907,7 +907,7 @@ dependencies = [
 
 [[package]]
 name = "hertz-daemon"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "hertz-dsp"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "hound",
  "num-complex",
@@ -950,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "hertz-relay"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "serde",
@@ -960,7 +960,7 @@ dependencies = [
 
 [[package]]
 name = "hertz-sdr"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "hertz-tui"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1001,14 +1001,14 @@ dependencies = [
 
 [[package]]
 name = "hertz-tx"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "hertz-types",
 ]
 
 [[package]]
 name = "hertz-types"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "serde",
