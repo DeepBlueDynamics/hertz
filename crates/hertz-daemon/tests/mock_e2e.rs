@@ -82,6 +82,7 @@ async fn mock_sdr_end_to_end_lifecycle_over_ws() {
         transcription: None,
         tx: None,
         relay: None,
+        lume: None,
     };
 
     let daemon = Daemon::start(config, Arc::new(factory), ChannelDb::new())
@@ -217,6 +218,7 @@ async fn spectrum_frames_arrive_only_when_requested() {
         transcription: None,
         tx: None,
         relay: None,
+        lume: None,
     };
 
     let daemon = Daemon::start(config, Arc::new(factory), ChannelDb::new())
@@ -436,6 +438,7 @@ async fn dongle_reconnects_after_startup_open_failure() {
         transcription: None,
         tx: None,
         relay: None,
+        lume: None,
     };
 
     // 200 ms retry interval so the test exercises the loop quickly (production

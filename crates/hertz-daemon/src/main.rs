@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let channels = hertz_channels::load_channels(&bandplans_dir, None::<&std::path::PathBuf>)?;
 
     banner(&config, &bandplans_dir, channels.channels.len(), mock_mode);
+    let lume = config.lume.clone();
 
     let daemon = if mock_mode {
         tracing::warn!("--mock mode: synthesizing static IQ, no real dongle");
@@ -51,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
     if listen_mode {
         hertz_daemon::speaker::spawn(&daemon.state.bus);
     }
+    hertz_daemon::lume::spawn(&daemon.state.bus, lume, mock_mode);
 
     // ctrl-c → graceful shutdown.
     tokio::signal::ctrl_c().await?;

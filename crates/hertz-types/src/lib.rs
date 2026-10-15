@@ -335,6 +335,42 @@ pub struct DaemonConfig {
     /// Route transcripts to Hyperia panes (present = enabled).
     #[serde(default)]
     pub relay: Option<RelayConfig>,
+    /// Send transcripts, squelch events and signal metrics to Lume over OTLP.
+    /// Absent = find a Lume on 127.0.0.1:5863 by itself.
+    #[serde(default)]
+    pub lume: Option<LumeConfig>,
+}
+
+/// Radio traffic -> Lume (`lume serve --otlp`), as OTLP/JSON logs and metrics.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LumeConfig {
+    /// `false` turns the Lume feed off.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Lume's base URL; skips discovery.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// File holding a bearer token for Lume's OTLP endpoint (bare token, one line).
+    #[serde(default)]
+    pub token_file: Option<String>,
+    /// `service.instance.id` in Lume (the station); defaults to the host name.
+    #[serde(default)]
+    pub instance: Option<String>,
+}
+
+impl Default for LumeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            url: None,
+            token_file: None,
+            instance: None,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Radio call -> Hyperia pane relay. ollaya picks the pane a transcript addresses

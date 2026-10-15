@@ -10,6 +10,7 @@ pub mod control;
 pub mod factory;
 pub mod history;
 pub mod live;
+pub mod lume;
 pub mod pipeline_bridge;
 pub mod recorder;
 pub mod relay;
