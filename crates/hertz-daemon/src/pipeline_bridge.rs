@@ -209,7 +209,16 @@ fn dispatch_monitor_event(
             });
         }
         PipelineEvent::TransmissionComplete(summary) => {
-            if snap.recording {
+            // A carrier or static with no voice isn't a call: don't record (or
+            // transcribe, or relay) open-squelch noise.
+            if summary.classification != SignalClassification::Voice {
+                tracing::info!(
+                    "not recorded: {} at {:.4} MHz ({}, no voice)",
+                    channel.as_deref().unwrap_or("?"),
+                    freq_hz as f64 / 1e6,
+                    summary.classification.label()
+                );
+            } else if snap.recording {
                 if let Some(tx) = &dsp.recorder_tx {
                     let _ = tx.send(TransmissionJob {
                         dongle_id: dongle_id.clone(),
@@ -521,7 +530,16 @@ fn dispatch_channelized_event(
             });
         }
         PipelineEvent::TransmissionComplete(summary) => {
-            if snap.recording {
+            // A carrier or static with no voice isn't a call: don't record (or
+            // transcribe, or relay) open-squelch noise.
+            if summary.classification != SignalClassification::Voice {
+                tracing::info!(
+                    "not recorded: {} at {:.4} MHz ({}, no voice)",
+                    channel.as_deref().unwrap_or("?"),
+                    freq_hz as f64 / 1e6,
+                    summary.classification.label()
+                );
+            } else if snap.recording {
                 if let Some(tx) = &dsp.recorder_tx {
                     let _ = tx.send(TransmissionJob {
                         dongle_id: dongle_id.clone(),
