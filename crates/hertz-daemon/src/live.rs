@@ -128,6 +128,10 @@ fn worker(rx: mpsc::Receiver<Msg>, whistle: Arc<WhistleTranscriber>, store: Live
                 if s.pending.len() >= FEED_SAMPLES {
                     let chunk = std::mem::take(&mut s.pending);
                     if let Some(t) = feed(engine, &whistle, &s.channel, &chunk) {
+                        // The weather sample runs on while the roundup is read.
+                        if s.channel.starts_with("WX") && t.to_lowercase().contains("roundup") {
+                            crate::weather::roundup_started();
+                        }
                         s.text.push(t);
                     }
                 }

@@ -6,7 +6,9 @@
 //! console pick up.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{Receiver, Sender};
 use hertz_dsp::pipeline::AUDIO_SAMPLE_RATE;
@@ -27,6 +29,44 @@ pub struct WeatherSample {
 }
 
 pub type WeatherTx = Sender<WeatherSample>;
+
+/// When the live transcriber last heard a weather channel begin its "Weather Radio
+/// Roundup" (unix ms; 0 = never). The roundup is the town-by-town current
+/// conditions; a sample that ends partway through it loses the last towns (New
+/// Braunfels was cut off after Schertz), so the sampler runs on until it's done.
+static ROUNDUP_STARTED_MS: AtomicU64 = AtomicU64::new(0);
+/// Roughly how long a roundup takes to read.
+pub const ROUNDUP_LENGTH: Duration = Duration::from_secs(75);
+
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Called by live transcription when a weather broadcast starts its roundup.
+pub fn roundup_started() {
+    if roundup_left().is_none() {
+        info!("WEATHER | roundup started; the sample runs on until it's read");
+    }
+    ROUNDUP_STARTED_MS.store(unix_ms(), Ordering::Relaxed);
+}
+
+/// Forget any earlier roundup (at the start of a sample).
+pub fn roundup_reset() {
+    ROUNDUP_STARTED_MS.store(0, Ordering::Relaxed);
+}
+
+/// How much of a roundup heard recently is still to come, if one is under way.
+pub fn roundup_left() -> Option<Duration> {
+    let started = ROUNDUP_STARTED_MS.load(Ordering::Relaxed);
+    if started == 0 {
+        return None;
+    }
+    let elapsed = Duration::from_millis(unix_ms().saturating_sub(started));
+    ROUNDUP_LENGTH.checked_sub(elapsed).filter(|d| !d.is_zero())
+}
 
 /// Audio RMS above this is open-squelch static, not a station: an FM carrier quiets
 /// the noise. Measured on this receiver: received calls 0.05-0.13, no carrier 0.65.
@@ -218,5 +258,21 @@ mod tests {
         assert!((seconds - 1.0).abs() < 0.01);
         assert!(recording.unwrap().ends_with("WX1.wav"));
         assert!(dir.path().join("weather").join("WX1.wav").exists());
+    }
+}
+
+#[cfg(test)]
+mod roundup_tests {
+    use super::*;
+
+    #[test]
+    fn a_roundup_holds_the_sample_open_for_its_length() {
+        roundup_reset();
+        assert_eq!(roundup_left(), None);
+        roundup_started();
+        let left = roundup_left().expect("under way");
+        assert!(left <= ROUNDUP_LENGTH && left > ROUNDUP_LENGTH - Duration::from_secs(2));
+        roundup_reset();
+        assert_eq!(roundup_left(), None);
     }
 }

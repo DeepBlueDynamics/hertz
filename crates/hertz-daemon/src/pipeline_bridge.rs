@@ -1348,8 +1348,29 @@ fn sample_weather(
     let mut acc = Vec::with_capacity(MONITOR_FRAME_BYTES * 2);
     // Drop the read in flight at the old frequency.
     let mut settle = crate::runtime::SCAN_READ_IQ_PAIRS * 2;
-    let give_up = Instant::now() + length + Duration::from_secs(10);
-    while audio.len() < want && Instant::now() < give_up && !dsp.shutdown.load(Ordering::Relaxed) {
+    let mut give_up = Instant::now() + length + Duration::from_secs(10);
+    // Past `want`, run on while a roundup (town-by-town current conditions) is being
+    // read, up to one roundup's length more, so its last towns aren't cut off.
+    let rate = AUDIO_SAMPLE_RATE as f64;
+    let cap = want + ((crate::weather::ROUNDUP_LENGTH.as_secs_f64() + 15.0) * rate) as usize;
+    crate::weather::roundup_reset();
+    let mut extended = false;
+    while !dsp.shutdown.load(Ordering::Relaxed) && Instant::now() < give_up {
+        if audio.len() >= want {
+            match crate::weather::roundup_left() {
+                Some(left) if audio.len() < cap => {
+                    if !extended {
+                        info!(
+                            "WEATHER | {channel} | roundup under way; sampling about {}s more",
+                            left.as_secs()
+                        );
+                        extended = true;
+                    }
+                    give_up = give_up.max(Instant::now() + Duration::from_secs(10));
+                }
+                _ => break,
+            }
+        }
         poll_worker_events(dsp);
         drain_into(consumer, &mut acc);
         if settle > 0 {
@@ -1394,7 +1415,7 @@ fn sample_weather(
             thread::sleep(Duration::from_millis(2));
         }
     }
-    audio.truncate(want);
+    audio.truncate(if extended { cap } else { want });
     (audio, (levels > 0).then(|| level_sum / levels as f32))
 }
 
