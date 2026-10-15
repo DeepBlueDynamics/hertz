@@ -14,7 +14,7 @@ members = [
 
 # One version for every hertz crate; scripts/bump-version.cjs sets it.
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 license = "BSD-3-Clause"
 
 [workspace.dependencies]
