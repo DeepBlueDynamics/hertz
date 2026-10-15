@@ -585,8 +585,11 @@ async fn run_tui(
         (None, None)
     };
 
-    // Setup terminal
+    // Setup terminal. The guard puts the console back however run_tui returns: an
+    // error left it raw, with Ctrl-C and echo off for every later program in that
+    // shell.
     crossterm::terminal::enable_raw_mode()?;
+    let _restore = TerminalGuard;
     let mut stdout = std::io::stdout();
     crossterm::execute!(
         stdout,
@@ -800,8 +803,12 @@ async fn run_tui(
                 if k.kind != KeyEventKind::Press {
                     continue;
                 }
-                // Quit globally
-                if k.code == KeyCode::Char('q') {
+                // Quit globally: q, or Ctrl-C (raw mode turns Ctrl-C into a key).
+                if k.code == KeyCode::Char('q')
+                    || (k.code == KeyCode::Char('c')
+                        && k.modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL))
+                {
                     break;
                 }
 
@@ -1729,16 +1736,23 @@ async fn run_tui(
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 
-    // Restore terminal on normal exit
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
     terminal.show_cursor()?;
-
     Ok(())
+}
+
+/// Leaves raw mode, the alternate screen and mouse capture when dropped.
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::event::DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
 }
 
 // ---------------------------------------------------------------------------
