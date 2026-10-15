@@ -728,21 +728,6 @@ fn power_at_db(iq: &[Complex32], offset_hz: f32) -> f32 {
     10.0 * (sum / blocks.max(1) as f32 + 1e-12).log10()
 }
 
-/// The scan neighbour within NEIGHBOUR_HZ whose signal in this frame beats the
-/// tuned channel's by NEIGHBOUR_MARGIN_DB, if any.
-fn stronger_neighbour(iq: &[Complex32], idx: usize, chans: &[(String, u32)]) -> Option<usize> {
-    let here = chans[idx].1 as i64;
-    let own = power_at_db(iq, 0.0);
-    chans
-        .iter()
-        .enumerate()
-        .filter(|&(j, (_, f))| j != idx && (*f as i64 - here).abs() <= NEIGHBOUR_HZ)
-        .map(|(j, (_, f))| (j, power_at_db(iq, (*f as i64 - here) as f32)))
-        .filter(|&(_, p)| p > own + NEIGHBOUR_MARGIN_DB)
-        .max_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(j, _)| j)
-}
-
 /// A squelch open this long is a stuck carrier, not a call.
 const SCAN_MAX_OPEN: Duration = Duration::from_secs(30);
 /// How long a nuisance channel (carrier or static, no voice) is skipped.
@@ -876,9 +861,32 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     priority.push(i);
                 }
             }
-            if !priority.is_empty() {
+            // Channels close enough to share one tuning are monitored together.
+            let groups = scan_groups(&chans, GROUP_SPAN_HZ);
+            let priority_groups: Vec<usize> = groups
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| g.members.iter().any(|m| priority.contains(m)))
+                .map(|(gi, _)| gi)
+                .collect();
+            tracing::info!(
+                "scanning {} channel(s) in {} group(s): {}",
+                chans.len(),
+                groups.len(),
+                groups
+                    .iter()
+                    .map(|g| g
+                        .members
+                        .iter()
+                        .map(|&m| chans[m].0.as_str())
+                        .collect::<Vec<_>>()
+                        .join(","))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+            if !priority_groups.is_empty() {
                 tracing::info!(
-                    "scan: priority {} (checked every other hop)",
+                    "scan: priority {} (its group is checked every other hop)",
                     priority
                         .iter()
                         .map(|&i| chans[i].0.as_str())
@@ -886,26 +894,32 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         .join(",")
                 );
             }
-            let (mut rot, mut turn) = (0usize, 0usize);
+
             let snap = dsp.control.snapshot();
             let mut squelch_epoch = snap.squelch_epoch;
             let mut pipelines: Vec<Pipeline> =
                 chans.iter().map(|_| build_pipeline(&snap)).collect();
+            let mut mixers: Vec<Mixer> = chans.iter().map(|_| Mixer::default()).collect();
+            let mut locked_until: Vec<Option<Instant>> = vec![None; chans.len()];
+            let mut open_since: Vec<Option<Instant>> = vec![None; chans.len()];
+            // When each group last had a call: recently busy groups are checked
+            // every other hop.
+            let mut active_at: Vec<Option<Instant>> = vec![None; groups.len()];
+            let (mut grot, mut gturn) = (0usize, 0usize);
+
             let mut consumer = dsp.worker.reader();
             let mut acc: Vec<u8> = Vec::with_capacity(MONITOR_FRAME_BYTES * 2);
             let mut spectrum = SpectrumEmitter::new();
             let span_hz = SDR_RATE as f64;
 
-            let mut idx = 0usize;
-            let _ = dsp.worker.retune(chans[idx].1);
+            let mut g = 0usize;
+            let _ = dsp.worker.retune(groups[g].center);
             // Bytes to drop after a retune: the worker read in flight when the retune
             // was issued still holds the old frequency.
             const SETTLE_BYTES: usize = crate::runtime::SCAN_READ_IQ_PAIRS * 2;
             let mut settle_bytes = SETTLE_BYTES;
             let mut last_open: Option<Instant> = None;
-            // When the current squelch opened, and per channel the end of a lockout.
-            let mut open_since: Option<Instant> = None;
-            let mut locked_until: Vec<Option<Instant>> = vec![None; chans.len()];
+
             let weather: Vec<(String, u32)> = dsp
                 .weather
                 .iter()
@@ -935,15 +949,6 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     w.every_minutes
                 );
             }
-            tracing::info!(
-                "scanning {} channel(s): {}",
-                chans.len(),
-                chans
-                    .iter()
-                    .map(|(id, _)| id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
 
             while !dsp.shutdown.load(Ordering::Relaxed) {
                 poll_worker_events(&dsp);
@@ -969,85 +974,87 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             snap.squelch_db
                         );
                     }
-                    let freq = chans[idx].1;
-                    let pipeline = &mut pipelines[idx];
-                    if !pipeline.is_squelch_open() && last_open.is_none() {
-                        pipeline.clear_prebuffer();
-                    }
-                    let was_open = pipeline.is_squelch_open();
-                    let events = pipeline.process_buffer(&iq);
-                    // FRS/GMRS channels are 12.5 kHz apart, inside this channel's
-                    // filter: a call on the next channel opens this one too. If a
-                    // scanned neighbour is stronger, drop this open unannounced and
-                    // move there; its own squelch opens on the next frame.
-                    if !was_open && pipeline.is_squelch_open() {
-                        if let Some(better) = stronger_neighbour(&iq, idx, &chans) {
-                            debug!(
-                                "scan: Ch {} opened on Ch {}'s signal; moving there",
-                                chans[idx].0, chans[better].0
-                            );
-                            pipeline.reset();
-                            idx = better;
-                            last_open = Some(Instant::now());
-                            let _ = dsp.worker.retune(chans[idx].1);
-                            acc.clear();
-                            drain_into(&mut consumer, &mut acc);
-                            acc.clear();
-                            settle_bytes = SETTLE_BYTES;
-                            break;
+                    let center = groups[g].center;
+                    let now = Instant::now();
+                    let mut any_open = false;
+
+                    // Every channel of the group, from the same samples: shift it to
+                    // 0 Hz and run its own squelch, demod and recorder.
+                    for &m in &groups[g].members {
+                        let pipeline = &mut pipelines[m];
+                        let locked = locked_until[m].is_some_and(|t| now < t);
+                        if locked && !pipeline.is_squelch_open() {
+                            continue;
                         }
-                    }
-                    for pe in events {
-                        dispatch_monitor_event(&dsp, &snap, freq, &pe);
-                        // A squelch that closes on a carrier or static, not a voice,
-                        // locks the channel out so it can't hold the scanner.
-                        if let PipelineEvent::SquelchClosed { classification, .. } = &pe {
-                            if *classification != SignalClassification::Voice {
-                                lock_out(&mut locked_until, idx, &chans, classification.label());
-                                last_open = None;
+                        let offset = chans[m].1 as f32 - center as f32;
+                        let shifted = mixers[m].shift(&iq, offset);
+                        if !pipeline.is_squelch_open() && last_open.is_none() {
+                            pipeline.clear_prebuffer();
+                        }
+                        let was_open = pipeline.is_squelch_open();
+                        let events = pipeline.process_buffer(&shifted);
+                        // FRS/GMRS channels are 12.5 kHz apart, inside a channel's
+                        // filter: a call on the next channel opens this one too. If a
+                        // neighbour in the group is stronger, drop this open unheard.
+                        if !was_open
+                            && pipeline.is_squelch_open()
+                            && stronger_member(&iq, center, m, &groups[g].members, &chans)
+                        {
+                            pipeline.reset();
+                            continue;
+                        }
+                        for pe in &events {
+                            dispatch_monitor_event(&dsp, &snap, chans[m].1, pe);
+                            // A squelch that closes on a carrier or static, not a voice,
+                            // locks the channel out so it can't hold the scanner.
+                            if let PipelineEvent::SquelchClosed { classification, .. } = pe {
+                                if *classification != SignalClassification::Voice {
+                                    lock_out(&mut locked_until, m, &chans, classification.label());
+                                }
                             }
+                        }
+                        // A squelch open longer than any call is a stuck carrier:
+                        // close it and lock the channel out.
+                        if pipeline.is_squelch_open() {
+                            let since = *open_since[m].get_or_insert(now);
+                            if since.elapsed() >= SCAN_MAX_OPEN {
+                                let noise_floor = pipeline.noise_floor_db();
+                                pipeline.reset();
+                                dispatch_monitor_event(
+                                    &dsp,
+                                    &snap,
+                                    chans[m].1,
+                                    &PipelineEvent::SquelchClosed {
+                                        signal_db: noise_floor,
+                                        noise_floor,
+                                        classification: SignalClassification::Carrier,
+                                    },
+                                );
+                                lock_out(&mut locked_until, m, &chans, "stuck open");
+                                open_since[m] = None;
+                            } else if locked_until[m].is_none_or(|t| now >= t) {
+                                any_open = true;
+                            }
+                        } else {
+                            open_since[m] = None;
                         }
                     }
                     if let Some(bins) = spectrum.maybe_emit(&iq) {
                         let _ = dsp.spectrum_tx.send(SpectrumFrame {
                             dongle_id: snap.dongle_id.clone(),
                             dongle_idx: dsp.dongle_idx,
-                            center_hz: freq as f64,
+                            center_hz: center as f64,
                             span_hz,
-                            squelch_open: pipeline.is_squelch_open(),
+                            squelch_open: any_open,
                             bins_db: bins,
                         });
                     }
 
-                    // Lock while open; linger after close for replies; else hop. A
-                    // squelch open longer than any call is a stuck carrier: close it,
-                    // lock the channel out and move on.
-                    if pipeline.is_squelch_open() {
-                        let since = *open_since.get_or_insert_with(Instant::now);
-                        if since.elapsed() < SCAN_MAX_OPEN {
-                            last_open = Some(Instant::now());
-                            continue;
-                        }
-                        let noise_floor = pipeline.noise_floor_db();
-                        pipeline.reset();
-                        dispatch_monitor_event(
-                            &dsp,
-                            &snap,
-                            freq,
-                            &PipelineEvent::SquelchClosed {
-                                signal_db: noise_floor,
-                                noise_floor,
-                                classification: SignalClassification::Carrier,
-                            },
-                        );
-                        lock_out(&mut locked_until, idx, &chans, "stuck open");
-                        last_open = None;
-                    }
-                    if !was_open || !pipeline.is_squelch_open() {
-                        open_since = None;
-                    }
-                    if locked_until[idx].is_some_and(|t| Instant::now() < t) {
-                        last_open = None;
+                    // Stay while a call is open; linger after it for replies; else hop.
+                    if any_open {
+                        last_open = Some(now);
+                        active_at[g] = Some(now);
+                        continue;
                     }
                     if let Some(t) = last_open {
                         if t.elapsed() < SCAN_RESUME_AFTER {
@@ -1057,7 +1064,7 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     }
                     // Idle between calls: take the weather sample if it's due.
                     if let (Some(due), Some((w, tx))) = (next_weather, dsp.weather.as_ref()) {
-                        if Instant::now() >= due {
+                        if now >= due {
                             for (id, wx_freq) in &weather {
                                 let (samples, signal_db) = sample_weather(
                                     &dsp,
@@ -1079,7 +1086,7 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             next_weather = Some(
                                 Instant::now() + Duration::from_secs(w.every_minutes.max(1) * 60),
                             );
-                            let _ = dsp.worker.retune(chans[idx].1);
+                            let _ = dsp.worker.retune(groups[g].center);
                             acc.clear();
                             drain_into(&mut consumer, &mut acc);
                             acc.clear();
@@ -1087,9 +1094,10 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             break;
                         }
                     }
-                    if chans.len() > 1 {
-                        idx = next_hop(idx, &mut rot, &mut turn, &priority, &locked_until);
-                        let _ = dsp.worker.retune(chans[idx].1);
+                    if groups.len() > 1 {
+                        let hot = hot_groups(&active_at, &priority_groups, now);
+                        g = next_hop(g, &mut grot, &mut gturn, &hot, &vec![None; groups.len()]);
+                        let _ = dsp.worker.retune(groups[g].center);
                         acc.clear();
                         drain_into(&mut consumer, &mut acc);
                         acc.clear();
@@ -1103,6 +1111,108 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             }
         })
         .expect("spawn scan dsp thread")
+}
+
+/// Widest spread of channels monitored from one tuning: well inside the 150 kHz tuner
+/// bandwidth with room for each channel's filter.
+const GROUP_SPAN_HZ: u32 = 120_000;
+/// A group with a call this recently is checked every other hop.
+const GROUP_HOT_FOR: Duration = Duration::from_secs(600);
+
+/// Channels sharing one tuning: `center` is the tuned frequency, `members` index
+/// the scan list.
+#[derive(Clone, Debug, PartialEq)]
+struct ScanGroup {
+    center: u32,
+    members: Vec<usize>,
+}
+
+/// Split the scan list into groups whose channels all fit within `span` Hz, in
+/// frequency order, each tuned to the middle of its channels.
+fn scan_groups(chans: &[(String, u32)], span: u32) -> Vec<ScanGroup> {
+    let mut order: Vec<usize> = (0..chans.len()).collect();
+    order.sort_by_key(|&i| chans[i].1);
+    let mut groups: Vec<ScanGroup> = Vec::new();
+    for i in order {
+        let f = chans[i].1;
+        match groups.last_mut() {
+            Some(gr) if f - chans[gr.members[0]].1 <= span => gr.members.push(i),
+            _ => groups.push(ScanGroup {
+                center: f,
+                members: vec![i],
+            }),
+        }
+    }
+    for gr in &mut groups {
+        let lo = chans[gr.members[0]].1;
+        let hi = chans[*gr.members.last().unwrap()].1;
+        gr.center = lo + (hi - lo) / 2;
+    }
+    groups
+}
+
+/// Groups to favour: those with a call in the last GROUP_HOT_FOR, plus the groups of
+/// configured priority channels.
+fn hot_groups(
+    active_at: &[Option<Instant>],
+    priority_groups: &[usize],
+    now: Instant,
+) -> Vec<usize> {
+    let mut hot: Vec<usize> = priority_groups.to_vec();
+    for (gi, at) in active_at.iter().enumerate() {
+        if at.is_some_and(|t| now.duration_since(t) < GROUP_HOT_FOR) && !hot.contains(&gi) {
+            hot.push(gi);
+        }
+    }
+    hot.sort_unstable();
+    hot
+}
+
+/// True when another channel of the group within NEIGHBOUR_HZ of `m` is
+/// NEIGHBOUR_MARGIN_DB stronger in this frame.
+fn stronger_member(
+    iq: &[Complex32],
+    center: u32,
+    m: usize,
+    members: &[usize],
+    chans: &[(String, u32)],
+) -> bool {
+    let at = |i: usize| power_at_db(iq, chans[i].1 as f32 - center as f32);
+    let own = at(m);
+    members.iter().any(|&o| {
+        o != m
+            && (chans[o].1 as i64 - chans[m].1 as i64).abs() <= NEIGHBOUR_HZ
+            && at(o) > own + NEIGHBOUR_MARGIN_DB
+    })
+}
+
+/// Phase-continuous frequency shifter: moves a channel `offset_hz` from the tuned
+/// frequency to 0 Hz, carrying phase across frames so FM demod sees no seams.
+#[derive(Default)]
+struct Mixer {
+    phase: f32,
+}
+
+impl Mixer {
+    fn shift(&mut self, iq: &[Complex32], offset_hz: f32) -> Vec<Complex32> {
+        if offset_hz == 0.0 {
+            return iq.to_vec();
+        }
+        let step = -2.0 * std::f32::consts::PI * offset_hz / SDR_RATE as f32;
+        let rot = Complex32::from_polar(1.0, step);
+        let mut osc = Complex32::from_polar(1.0, self.phase);
+        let out = iq
+            .iter()
+            .map(|&s| {
+                let y = s * osc;
+                osc *= rot;
+                y
+            })
+            .collect();
+        // From the oscillator itself, not step * len, which loses precision in f32.
+        self.phase = osc.arg();
+        out
+    }
 }
 
 /// Tune `freq` and collect `length` of demodulated audio for the weather sideband.
@@ -1250,14 +1360,30 @@ mod neighbour_tests {
     #[test]
     fn a_call_on_the_next_channel_moves_the_scanner_there() {
         // Tuned to gmrs-15, the call is 12.5 kHz up, on gmrs-1.
-        assert_eq!(stronger_neighbour(&tone(12_500.0), 0, &frs()), Some(1));
+        // Tuned between gmrs-15 and gmrs-1, the call is on gmrs-1: gmrs-15 yields.
+        let center = 462_556_250;
+        let call = tone(462_562_500.0 - center as f32);
+        assert!(stronger_member(&call, center, 0, &[0, 1, 2], &frs()));
+        assert!(!stronger_member(&call, center, 1, &[0, 1, 2], &frs()));
     }
 
     #[test]
     fn a_call_on_the_tuned_channel_stays() {
-        assert_eq!(stronger_neighbour(&tone(0.0), 1, &frs()), None);
+        assert!(!stronger_member(
+            &tone(0.0),
+            462_562_500,
+            1,
+            &[0, 1, 2],
+            &frs()
+        ));
         // gmrs-2 is 25 kHz from gmrs-1: not a neighbour to check.
-        assert_eq!(stronger_neighbour(&tone(25_000.0), 1, &frs()), None);
+        assert!(!stronger_member(
+            &tone(25_000.0),
+            462_562_500,
+            1,
+            &[0, 1, 2],
+            &frs()
+        ));
     }
 }
 
@@ -1331,5 +1457,61 @@ mod wideband_neighbour_tests {
             vec![2, 4],
             "gmrs-1 wins over its neighbours; a separate call 75 kHz away stays"
         );
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::*;
+
+    fn db() -> ChannelDb {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bandplans");
+        hertz_channels::load_channels(dir, None).unwrap()
+    }
+
+    #[test]
+    fn frs_gmrs_is_a_few_tunings_not_22() {
+        let chans = scan_channels(&db(), &["frs-gmrs".to_string()]);
+        let groups = scan_groups(&chans, GROUP_SPAN_HZ);
+        assert!(groups.len() <= 5, "{groups:?}");
+        assert_eq!(groups.iter().map(|g| g.members.len()).sum::<usize>(), 22);
+        for gr in &groups {
+            for &m in &gr.members {
+                let off = chans[m].1 as i64 - gr.center as i64;
+                assert!(
+                    off.abs() <= (GROUP_SPAN_HZ / 2) as i64,
+                    "{} is {off} Hz off",
+                    chans[m].0
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn marine_68_to_72_is_two_tunings() {
+        let chans = scan_channels(&db(), &["68", "69", "71", "72"].map(String::from));
+        assert_eq!(scan_groups(&chans, GROUP_SPAN_HZ).len(), 2);
+    }
+
+    #[test]
+    fn mixer_brings_a_channel_to_zero_hz() {
+        let step = 2.0 * std::f32::consts::PI * 50_000.0 / SDR_RATE as f32;
+        let iq: Vec<Complex32> = (0..12_000)
+            .map(|n| Complex32::from_polar(0.5, n as f32 * step))
+            .collect();
+        let mut mixer = Mixer::default();
+        let first = mixer.shift(&iq[..6000], 50_000.0);
+        let second = mixer.shift(&iq[6000..], 50_000.0);
+        assert!(power_at_db(&first, 0.0) > power_at_db(&first, 25_000.0) + 20.0);
+        // Phase carries across frames: the shifted tone stays at a steady phase.
+        let gap = (second[0] * first[first.len() - 1].conj()).arg().abs();
+        assert!(gap < 0.01, "phase jump {gap}");
+    }
+
+    #[test]
+    fn busy_groups_are_hot() {
+        let now = Instant::now();
+        let active = [None, Some(now), Some(now - Duration::from_secs(3600))];
+        assert_eq!(hot_groups(&active, &[0], now), vec![0, 1]);
     }
 }

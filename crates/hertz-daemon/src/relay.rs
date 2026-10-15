@@ -531,27 +531,36 @@ impl Relay {
         let Some(server_text) = self.server_transcript(call) else {
             return;
         };
-        match adds_information(&self.ollaya, &call.text, &server_text, self.min_probability) {
-            Ok((true, p)) => {
-                let body = format!(
-                    "Follow-up: this call was re-processed on the transcription server and it heard more.\n\nServer transcript:\n{server_text}\n\nOn-device transcript (sent earlier):\n{}",
-                    call.text
-                );
-                match self
-                    .hyperia
-                    .msg_send(pane_id, &format!("Re: {}", call.subject()), &body)
-                {
-                    Ok(reply) => info!(
-                        "RELAY | Ch {ch} | double-check heard more (p={p:.2}): {server_text:?} -> follow-up to {pane_name} | {}",
-                        summarize(&reply)
-                    ),
-                    Err(e) => warn!("RELAY | Ch {ch} | follow-up msg_send failed: {e:#}"),
-                }
-            }
-            Ok((false, p)) => {
-                info!("RELAY | Ch {ch} | double-check agrees (p={p:.2}): {server_text:?}")
-            }
-            Err(e) => warn!("RELAY | Ch {ch} | double-check compare failed: {e:#}"),
+        // Any difference in the words goes out. ollaya used to judge whether the
+        // server "heard more", and called "remove the Q" vs "remove the cue" the
+        // same, so the better transcript never reached the pane. Its judgement
+        // now only labels the follow-up.
+        if server_text.trim().is_empty() || words(&server_text) == words(&call.text) {
+            info!("RELAY | Ch {ch} | double-check agrees word for word: {server_text:?}");
+            return;
+        }
+        let heard_more =
+            adds_information(&self.ollaya, &call.text, &server_text, self.min_probability)
+                .map(|(more, _)| more)
+                .unwrap_or(false);
+        let lead = if heard_more {
+            "Follow-up: this call was re-processed on the transcription server and it heard more."
+        } else {
+            "Follow-up: the transcription server's version of this call (it may read better)."
+        };
+        let body = format!(
+            "{lead}\n\nServer transcript:\n{server_text}\n\nOn-device transcript (sent earlier):\n{}",
+            call.text
+        );
+        match self
+            .hyperia
+            .msg_send(pane_id, &format!("Re: {}", call.subject()), &body)
+        {
+            Ok(reply) => info!(
+                "RELAY | Ch {ch} | double-check differs (heard more: {heard_more}): {server_text:?} -> follow-up to {pane_name} | {}",
+                summarize(&reply)
+            ),
+            Err(e) => warn!("RELAY | Ch {ch} | follow-up msg_send failed: {e:#}"),
         }
     }
 }
