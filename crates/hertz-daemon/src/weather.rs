@@ -32,6 +32,9 @@ pub type WeatherTx = Sender<WeatherSample>;
 /// the noise. Measured on this receiver: received calls 0.05-0.13, no carrier 0.65.
 /// Transcribing static makes Whistle invent words ("Thank you."), so it's skipped.
 const STATIC_RMS: f32 = 0.35;
+/// ...unless the channel carries real power: static read -21 to -23 dB here, the
+/// Seguin station on WX3 -12.4 dB with noisy audio (rms 0.56) you can still follow.
+const STATION_DB: f32 = -17.0;
 
 fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
@@ -64,7 +67,8 @@ fn run(
             .map(|db| format!("signal {db:.1} dB"))
             .unwrap_or_else(|| "no signal reading".into());
         let audio_rms = rms(&sample.samples);
-        if audio_rms > STATIC_RMS {
+        let has_station = sample.signal_db.is_some_and(|db| db > STATION_DB);
+        if audio_rms > STATIC_RMS && !has_station {
             info!(
                 "WEATHER | {} | {:.3} MHz | {level} | no carrier (static, audio rms {audio_rms:.2})",
                 sample.channel,
@@ -161,7 +165,7 @@ mod tests {
             samples: (0..48_000)
                 .map(|i| if i % 2 == 0 { level } else { -level })
                 .collect(),
-            signal_db: Some(-20.0),
+            signal_db: Some(-21.0),
         };
         tx.send(sample("WX1", 0.65)).unwrap(); // static
         tx.send(sample("WX2", 0.1)).unwrap(); // a station
