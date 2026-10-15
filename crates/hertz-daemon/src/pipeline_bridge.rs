@@ -730,6 +730,9 @@ fn power_at_db(iq: &[Complex32], offset_hz: f32) -> f32 {
 
 /// A squelch open this long is a stuck carrier, not a call.
 const SCAN_MAX_OPEN: Duration = Duration::from_secs(30);
+/// A carrier/static open at least this long locks a (non-priority) channel out;
+/// shorter bursts, like a key-up, only mark the group busy.
+const NUISANCE_LONG: Duration = Duration::from_secs(8);
 /// How long a nuisance channel (carrier or static, no voice) is skipped.
 const SCAN_LOCKOUT: Duration = Duration::from_secs(300);
 
@@ -1005,11 +1008,23 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         }
                         for pe in &events {
                             dispatch_monitor_event(&dsp, &snap, chans[m].1, pe);
-                            // A squelch that closes on a carrier or static, not a voice,
-                            // locks the channel out so it can't hold the scanner.
+                            // A long carrier or static open (not a voice) locks the channel
+                            // out so it can't hold the scanner. Priority channels never are:
+                            // missing a call there is worse.
                             if let PipelineEvent::SquelchClosed { classification, .. } = pe {
                                 if *classification != SignalClassification::Voice {
-                                    lock_out(&mut locked_until, m, &chans, classification.label());
+                                    let lasted = open_since[m]
+                                        .map_or(Duration::ZERO, |t| now.duration_since(t));
+                                    // Short bursts (a key-up) are activity, not a nuisance: the
+                                    // group is now busy and gets checked every other hop.
+                                    if !priority.contains(&m) && lasted >= NUISANCE_LONG {
+                                        lock_out(
+                                            &mut locked_until,
+                                            m,
+                                            &chans,
+                                            classification.label(),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1030,7 +1045,9 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                         classification: SignalClassification::Carrier,
                                     },
                                 );
-                                lock_out(&mut locked_until, m, &chans, "stuck open");
+                                if !priority.contains(&m) {
+                                    lock_out(&mut locked_until, m, &chans, "stuck open");
+                                }
                                 open_since[m] = None;
                             } else if locked_until[m].is_none_or(|t| now >= t) {
                                 any_open = true;
