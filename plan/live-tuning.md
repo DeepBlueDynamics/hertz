@@ -147,6 +147,14 @@ rename. `DELETE /api/tuning` resets to the config.
 - Scan-list changes must not drop an open call's recording.
 - Neighbour detection with per-channel thresholds needs a test.
 
+## Decided (Kord, 2026-10-15)
+
+- **Gain:** fixed manual gain, saved in `tuning.json`; auto-tune sets absolute
+  per-channel levels.
+- **Auto-tune applies right away**, logs and reports every change.
+- **Carriers:** locked out for 30 min, then rechecked.
+- **Build phases 0 and 1 now.**
+
 ## Open questions for Kord
 
 1. Fix the tuner gain (for example 30-40 dB, saved in `tuning.json`)? Under Auto,

@@ -64,6 +64,8 @@ pub struct DspThread {
     pub channels: Arc<ChannelDb>,
     /// Monitor-role scan list (channel ids); empty = fixed frequency.
     pub scan: Vec<String>,
+    /// Priority channels (ids or groups), checked every other hop while scanning.
+    pub priority: Vec<String>,
     /// Weather sideband (scanning monitor only) and where its samples go.
     pub weather: Option<(WeatherConfig, WeatherTx)>,
 }
@@ -729,6 +731,45 @@ fn lock_out(locked_until: &mut [Option<Instant>], idx: usize, chans: &[(String, 
     );
 }
 
+/// Where the scanner goes next. Without priority channels: the next unlocked
+/// channel. With them, every other hop is a priority channel (taken in turn), so a
+/// priority channel is checked about every half second however long the list is,
+/// and a call-up on it isn't clipped while the scan is elsewhere. `rot` is the
+/// position in the rotation of the other channels; `turn` cycles the priorities.
+fn next_hop(
+    idx: usize,
+    rot: &mut usize,
+    turn: &mut usize,
+    priority: &[usize],
+    locked_until: &[Option<Instant>],
+) -> usize {
+    let n = locked_until.len();
+    let now = Instant::now();
+    let free = |i: usize| locked_until[i].is_none_or(|t| now >= t);
+    let free_priority: Vec<usize> = priority.iter().copied().filter(|&p| free(p)).collect();
+    if free_priority.is_empty() {
+        return next_channel(idx, locked_until);
+    }
+    if !priority.contains(&idx) {
+        *turn = (*turn + 1) % free_priority.len();
+        return free_priority[*turn];
+    }
+    // From a priority channel: the next other channel in the rotation.
+    let next = (1..=n)
+        .map(|step| (*rot + step) % n)
+        .find(|&i| !priority.contains(&i) && free(i));
+    match next {
+        Some(i) => {
+            *rot = i;
+            i
+        }
+        None => {
+            *turn = (*turn + 1) % free_priority.len();
+            free_priority[*turn]
+        }
+    }
+}
+
 /// The next channel after `idx` that isn't locked out; `idx + 1` if all are.
 fn next_channel(idx: usize, locked_until: &[Option<Instant>]) -> usize {
     let n = locked_until.len();
@@ -787,12 +828,38 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
     thread::Builder::new()
         .name(format!("dsp-scan-{}", dsp.control.snapshot().dongle_id))
         .spawn(move || {
-            let chans = scan_channels(&dsp.channels, &dsp.scan);
+            let mut chans = scan_channels(&dsp.channels, &dsp.scan);
             if chans.is_empty() {
                 warn!("scan list has no known channels; scanner idle");
                 return;
             }
+            // Priority channels (ids or groups), added to the scan if missing.
+            let mut priority: Vec<usize> = Vec::new();
+            for (id, freq) in scan_channels(&dsp.channels, &dsp.priority) {
+                let i = match chans.iter().position(|(have, _)| *have == id) {
+                    Some(i) => i,
+                    None => {
+                        chans.push((id, freq));
+                        chans.len() - 1
+                    }
+                };
+                if !priority.contains(&i) {
+                    priority.push(i);
+                }
+            }
+            if !priority.is_empty() {
+                tracing::info!(
+                    "scan: priority {} (checked every other hop)",
+                    priority
+                        .iter()
+                        .map(|&i| chans[i].0.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+            let (mut rot, mut turn) = (0usize, 0usize);
             let snap = dsp.control.snapshot();
+            let mut squelch_epoch = snap.squelch_epoch;
             let mut pipelines: Vec<Pipeline> =
                 chans.iter().map(|_| build_pipeline(&snap)).collect();
             let mut consumer = dsp.worker.reader();
@@ -861,6 +928,18 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     let frame: Vec<u8> = acc.drain(..MONITOR_FRAME_BYTES).collect();
                     let iq = bytes_to_iq(&frame);
                     let snap = dsp.control.snapshot();
+                    // A squelch change (POST /squelch, MCP) applies live to every
+                    // channel, keeping the learned noise floors.
+                    if snap.squelch_epoch != squelch_epoch {
+                        squelch_epoch = snap.squelch_epoch;
+                        for p in &mut pipelines {
+                            p.set_squelch_margin(snap.squelch_db);
+                        }
+                        tracing::info!(
+                            "scan: squelch now {:.1} dB over the noise floor",
+                            snap.squelch_db
+                        );
+                    }
                     let freq = chans[idx].1;
                     let pipeline = &mut pipelines[idx];
                     if !pipeline.is_squelch_open() && last_open.is_none() {
@@ -980,7 +1059,7 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         }
                     }
                     if chans.len() > 1 {
-                        idx = next_channel(idx, &locked_until);
+                        idx = next_hop(idx, &mut rot, &mut turn, &priority, &locked_until);
                         let _ = dsp.worker.retune(chans[idx].1);
                         acc.clear();
                         drain_into(&mut consumer, &mut acc);
@@ -1150,5 +1229,51 @@ mod neighbour_tests {
         assert_eq!(stronger_neighbour(&tone(0.0), 1, &frs()), None);
         // gmrs-2 is 25 kHz from gmrs-1: not a neighbour to check.
         assert_eq!(stronger_neighbour(&tone(25_000.0), 1, &frs()), None);
+    }
+}
+
+#[cfg(test)]
+mod priority_tests {
+    use super::*;
+
+    #[test]
+    fn priority_channel_is_every_other_hop() {
+        let locked = vec![None; 5];
+        let (mut rot, mut turn) = (0, 0);
+        let mut idx = 0; // 0 is the priority channel
+        let mut path = vec![];
+        for _ in 0..8 {
+            idx = next_hop(idx, &mut rot, &mut turn, &[0], &locked);
+            path.push(idx);
+        }
+        assert_eq!(path, vec![1, 0, 2, 0, 3, 0, 4, 0]);
+    }
+
+    #[test]
+    fn no_priority_is_a_plain_sweep_and_locked_priority_is_skipped() {
+        let locked = vec![None; 3];
+        assert_eq!(next_hop(0, &mut 0, &mut 0, &[], &locked), 1);
+        let later = Some(Instant::now() + Duration::from_secs(60));
+        let locked = vec![later, None, None];
+        assert_eq!(next_hop(1, &mut 1, &mut 0, &[0], &locked), 2);
+    }
+}
+
+#[cfg(test)]
+mod live_squelch_tests {
+    use super::*;
+
+    #[test]
+    fn margin_changes_live_without_losing_the_floor() {
+        let mut p = Pipeline::new(PipelineConfig {
+            squelch_margin_db: 6.0,
+            ..PipelineConfig::default()
+        });
+        let floor = p.noise_floor_db();
+        p.set_squelch_margin(10.0);
+        assert_eq!(p.noise_floor_db(), floor);
+        assert_eq!(p.squelch_threshold_db(), floor + 10.0);
+        p.set_open_floor(Some(-10.0));
+        assert_eq!(p.squelch_threshold_db(), (floor + 10.0).max(-10.0));
     }
 }

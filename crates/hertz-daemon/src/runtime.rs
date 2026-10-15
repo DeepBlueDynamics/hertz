@@ -185,6 +185,7 @@ impl Daemon {
                 dongle_id: id.clone(),
                 serial: dc.serial.clone(),
                 scan: dc.scan.clone().unwrap_or_default(),
+                priority: dc.priority.clone().unwrap_or_default(),
                 weather: weather_for(dc, &id, weather_tx.as_ref()),
             };
 
@@ -475,6 +476,7 @@ struct DongleLaunchCtx {
     serial: String,
     /// Monitor-role scan list (channel ids); empty = fixed frequency.
     scan: Vec<String>,
+    priority: Vec<String>,
     weather: Option<(hertz_types::WeatherConfig, crate::weather::WeatherTx)>,
 }
 
@@ -497,6 +499,7 @@ fn launch_dsp(
         shutdown: shutdown.clone(),
         channels: ctx.channels.clone(),
         scan: ctx.scan.clone(),
+        priority: ctx.priority.clone(),
         weather: ctx.weather.clone(),
     };
     let join = match ctx.role {

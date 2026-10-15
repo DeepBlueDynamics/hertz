@@ -147,6 +147,9 @@ pub struct PipelineConfig {
     /// When true, emit [`PipelineEvent::MonitorTap`] for squelch-closed frames too
     /// (gnosis always-on tap channel).
     pub always_stream: bool,
+    /// Absolute minimum open threshold (dB): the squelch opens on power only above
+    /// max(noise floor + margin, this). None = margin only.
+    pub open_floor_db: Option<f32>,
 }
 
 impl Default for PipelineConfig {
@@ -158,11 +161,23 @@ impl Default for PipelineConfig {
             initial_noise_floor_db: SEED_NOISE_FLOOR_DB,
             prebuffer_seconds: PREBUFFER_SECONDS,
             always_stream: false,
+            open_floor_db: None,
         }
     }
 }
 
 // ---- Pipeline ------------------------------------------------------------
+
+/// One frame's levels, from [Pipeline::last_frame].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameStats {
+    pub signal_db: f32,
+    pub flatness: f32,
+    pub noise_floor_db: f32,
+    pub threshold_db: f32,
+    pub open: bool,
+    pub voice: bool,
+}
 
 pub struct Pipeline {
     state: TransmissionState,
@@ -203,6 +218,52 @@ impl Pipeline {
     /// Current noise-floor estimate (dB).
     pub fn noise_floor_db(&self) -> f32 {
         self.state.noise_floor
+    }
+
+    /// Change the squelch margin live, keeping the learned noise floor (no
+    /// recalibration).
+    pub fn set_squelch_margin(&mut self, db: f32) {
+        self.state.squelch_margin = db;
+        self.state.update_thresh();
+    }
+
+    /// Set or clear the absolute minimum open threshold (dB), live.
+    pub fn set_open_floor(&mut self, db: Option<f32>) {
+        self.state.open_floor = db;
+        self.state.update_thresh();
+    }
+
+    /// Re-seed the noise floor estimate (dB), e.g. from a measured median.
+    pub fn set_noise_floor(&mut self, db: f32) {
+        self.state.noise_floor = db;
+        self.state.update_thresh();
+    }
+
+    pub fn squelch_margin_db(&self) -> f32 {
+        self.state.squelch_margin
+    }
+
+    pub fn open_floor_db(&self) -> Option<f32> {
+        self.state.open_floor
+    }
+
+    /// The power level (dB) above which the squelch opens.
+    pub fn squelch_threshold_db(&self) -> f32 {
+        self.state.squelch_thresh
+    }
+
+    /// The last processed frame, for live level readouts.
+    pub fn last_frame(&self) -> FrameStats {
+        let s = &self.state;
+        FrameStats {
+            signal_db: s.last_signal_db,
+            flatness: s.last_flatness,
+            noise_floor_db: s.noise_floor,
+            threshold_db: s.squelch_thresh,
+            open: s.squelch_open,
+            voice: s.voice_detected_this_transmission
+                || s.last_signal_class == SignalClassification::Voice,
+        }
     }
 
     /// The active demodulation mode.
@@ -246,7 +307,11 @@ struct TransmissionState {
     noise_floor: f32,
     squelch_thresh: f32,
     squelch_margin: f32,
+    open_floor: Option<f32>,
     always_stream: bool,
+    /// The last frame's in-channel power and audio flatness, for live level readouts.
+    last_signal_db: f32,
+    last_flatness: f32,
 }
 
 impl TransmissionState {
@@ -283,10 +348,20 @@ impl TransmissionState {
             recording_stopped: false,
             audio_flatness_ema: 0.8, // start assuming noise
             noise_floor,
-            squelch_thresh: noise_floor + config.squelch_margin_db,
+            squelch_thresh: (noise_floor + config.squelch_margin_db)
+                .max(config.open_floor_db.unwrap_or(f32::MIN)),
             squelch_margin: config.squelch_margin_db,
+            open_floor: config.open_floor_db,
             always_stream: config.always_stream,
+            last_signal_db: noise_floor,
+            last_flatness: 0.8,
         }
+    }
+
+    /// The open threshold: max(floor + margin, open floor).
+    fn update_thresh(&mut self) {
+        self.squelch_thresh =
+            (self.noise_floor + self.squelch_margin).max(self.open_floor.unwrap_or(f32::MIN));
     }
 
     fn reset(&mut self) {
@@ -356,6 +431,8 @@ impl TransmissionState {
         self.audio_flatness_ema = FLATNESS_EMA_ALPHA * self.audio_flatness_ema
             + (1.0 - FLATNESS_EMA_ALPHA) * audio_flatness;
         let flatness = self.audio_flatness_ema;
+        self.last_signal_db = signal_db;
+        self.last_flatness = flatness;
 
         // Power OR entropy: in-channel power above noise+margin opens the squelch
         // (the vhf_monitor power squelch that reliably catches live marine traffic),
@@ -367,7 +444,7 @@ impl TransmissionState {
         if calibrating {
             let n = self.frame_count as f32;
             self.noise_floor += (signal_db - self.noise_floor) / n;
-            self.squelch_thresh = self.noise_floor + self.squelch_margin;
+            self.update_thresh();
         }
         let signal_present =
             !calibrating && (flatness < FLATNESS_OPEN || signal_db > self.squelch_thresh);
@@ -403,7 +480,7 @@ impl TransmissionState {
         if let Some(alpha) = target {
             let next = (1.0 - alpha) * self.noise_floor + alpha * signal_db;
             self.noise_floor = next.max(self.noise_floor - NOISE_FLOOR_MAX_DROP_DB);
-            self.squelch_thresh = self.noise_floor + self.squelch_margin;
+            self.update_thresh();
         }
         // Stuck-open recovery: open this long with no voice means the floor is
         // wrong (or a dead carrier) — re-measure from the current level so the
@@ -413,7 +490,7 @@ impl TransmissionState {
             && self.frames_since_squelch_open >= STUCK_OPEN_FRAMES
         {
             self.noise_floor = signal_db;
-            self.squelch_thresh = self.noise_floor + self.squelch_margin;
+            self.update_thresh();
         }
 
         // === Listening chain (after analysis): de-emphasis + LPF + fixed gain ===
