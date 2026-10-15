@@ -100,6 +100,8 @@ struct Stream {
     pending: Vec<f32>,
     /// Words committed so far.
     text: Vec<String>,
+    /// The engine's last uncommitted guess, logged when it changes.
+    guess: String,
 }
 
 fn worker(rx: mpsc::Receiver<Msg>, whistle: Arc<WhistleTranscriber>, store: LiveTranscripts) {
@@ -122,12 +124,13 @@ fn worker(rx: mpsc::Receiver<Msg>, whistle: Arc<WhistleTranscriber>, store: Live
                     channel,
                     pending: Vec::new(),
                     text: Vec::new(),
+                    guess: String::new(),
                 });
                 s.pending
                     .extend(whistle::resample(&pcm, BUS_RATE, whistle::SAMPLE_RATE));
                 if s.pending.len() >= FEED_SAMPLES {
                     let chunk = std::mem::take(&mut s.pending);
-                    if let Some(t) = feed(engine, &whistle, &s.channel, &chunk) {
+                    if let Some(t) = feed(engine, &whistle, &s.channel, &chunk, &mut s.guess) {
                         // The weather sample runs on while the roundup is read.
                         if s.channel.starts_with("WX") && t.to_lowercase().contains("roundup") {
                             crate::weather::roundup_started();
@@ -145,19 +148,30 @@ fn worker(rx: mpsc::Receiver<Msg>, whistle: Arc<WhistleTranscriber>, store: Live
     }
 }
 
-/// Feed audio; returns the words this pass committed, if any.
+/// Feed audio; returns the words this pass committed, if any. Words the engine has
+/// heard but not committed yet (on a short call it holds them all until the end)
+/// are logged as they change, marked `…`, so the console shows speech as it comes.
 fn feed(
     engine: &whistle::Whistle,
     whistle: &WhistleTranscriber,
     channel: &str,
     pcm: &[f32],
+    guess: &mut String,
 ) -> Option<String> {
     match engine.stream_process(pcm, &whistle.options()) {
         Ok(u) if !u.text.trim().is_empty() => {
             info!("LIVE | Ch {channel} | {}", u.text.trim());
+            guess.clear();
             Some(u.text.trim().to_string())
         }
-        Ok(_) => None,
+        Ok(u) => {
+            let pending = u.pending.trim();
+            if !pending.is_empty() && pending != guess.as_str() {
+                info!("LIVE | Ch {channel} | … {pending}");
+                *guess = pending.to_string();
+            }
+            None
+        }
         Err(e) => {
             warn!("LIVE | Ch {channel} | stream failed: {e}");
             None
@@ -177,7 +191,7 @@ fn finish(
     let Some(mut s) = stream else { return };
     if !s.pending.is_empty() {
         let chunk = std::mem::take(&mut s.pending);
-        if let Some(t) = feed(engine, whistle, &s.channel, &chunk) {
+        if let Some(t) = feed(engine, whistle, &s.channel, &chunk, &mut s.guess) {
             s.text.push(t);
         }
     }
