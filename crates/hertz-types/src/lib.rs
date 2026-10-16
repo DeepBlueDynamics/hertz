@@ -65,6 +65,33 @@ pub enum Event {
     },
     /// A routing decision by the relay: where a call went (or why it went nowhere),
     /// so a wrong pick is on record next to the transcript.
+    /// One call handled by the radio agent: every ollaya question and answer, the
+    /// tool call built from them and what was said back. The training record.
+    Agent {
+        dongle_id: String,
+        channel: Option<String>,
+        freq_hz: u64,
+        /// The transcript.
+        text: String,
+        /// The call sign the caller used.
+        callsign: String,
+        /// The tool picked, or "nothing" / "stand_down" / "say_again".
+        tool: String,
+        /// The arguments built, as JSON.
+        args: String,
+        /// Each question: options, answer, probabilities (JSON).
+        decisions: String,
+        /// "ok", or the error.
+        outcome: String,
+        /// What was spoken.
+        reply: String,
+    },
+    /// The radio agent took a new call sign.
+    AgentCallsign {
+        callsign: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<String>,
+    },
     Relayed {
         dongle_id: String,
         channel: Option<String>,
@@ -501,6 +528,14 @@ pub struct RelayConfig {
     pub verify_url: String,
     #[serde(default = "default_verify_model")]
     pub verify_model: String,
+    /// The radio agent: calls to its rotating call sign are carried out with
+    /// hertz tools picked by ollaya, and answered aloud. Off by default.
+    #[serde(default)]
+    pub agent: bool,
+    /// The Hyperia pane (name or paneId) that gets the agent's call sign each
+    /// time it changes; empty: only the log and Lume.
+    #[serde(default)]
+    pub agent_chat: String,
 }
 
 fn default_verify_url() -> String {

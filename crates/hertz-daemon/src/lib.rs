@@ -4,6 +4,7 @@
 //! (REST + WS + SSE + `/audio` on one port). Hopscan, MCP, and the transcription
 //! engines are later phases; only seams are provided here.
 
+pub mod agent;
 pub mod audio;
 pub mod bus;
 pub mod control;

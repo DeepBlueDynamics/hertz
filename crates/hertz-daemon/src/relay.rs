@@ -25,6 +25,7 @@ use hertz_relay::verify::{adds_information, TranscriptionService};
 use hertz_types::{Event, RelayConfig};
 use tracing::{debug, info, warn};
 
+use crate::agent::{AgentCall, AgentSlot};
 use crate::bus::EventBus;
 use crate::live::LiveTranscripts;
 use crate::transcribe::LiveKeywords;
@@ -47,6 +48,7 @@ fn spawn_pane_name_poller(relay: Arc<Relay>, live: LiveKeywords) {
                 .iter()
                 .map(|p| spoken_name(&p.name))
                 .chain(relay.callsigns())
+                .chain(relay.agent.get().map(|a| a.callsign()))
                 .filter(|n| !n.is_empty())
                 .collect();
             names.sort();
@@ -79,6 +81,8 @@ struct Relay {
     seen: Mutex<HashMap<String, (Pane, Instant)>>,
     /// Each channel's finished live-stream transcript (empty when live is off).
     live: LiveTranscripts,
+    /// The radio agent, once the daemon has started it (relay `agent = true`).
+    agent: AgentSlot,
 }
 
 /// The live transcript of a call is kept until the full-recording transcript
@@ -116,6 +120,11 @@ enum Dest {
         sign: String,
         how: String,
     },
+    /// The radio agent's call sign: it carries the call out.
+    Agent {
+        sign: String,
+        how: String,
+    },
     /// A pane named outright: delivered with `msg_send`.
     Pane {
         pane: Pane,
@@ -142,6 +151,7 @@ pub fn spawn(
     cfg: &RelayConfig,
     live_keywords: LiveKeywords,
     live_transcripts: LiveTranscripts,
+    agent: AgentSlot,
 ) {
     let token_path = expand_home(&cfg.token_file);
     let token = match std::fs::read_to_string(&token_path) {
@@ -162,6 +172,7 @@ pub fn spawn(
         own_pane: std::env::var("HYPERIA_PANE").ok().filter(|p| !p.is_empty()),
         seen: Mutex::new(HashMap::new()),
         live: live_transcripts,
+        agent,
     });
     info!("relay: routing transcripts to Hyperia panes via ollaya");
     spawn_pane_name_poller(Arc::clone(&relay), live_keywords);
@@ -235,11 +246,14 @@ impl Relay {
     fn route(&self, text: &str) -> anyhow::Result<Dest> {
         let signs = self.callsigns();
         let panes = pane_labels(&self.panes());
+        let agent_sign = self.agent.get().map(|a| a.callsign());
         let mut names = signs.clone();
+        names.extend(agent_sign.clone());
         names.extend(panes.keys().filter(|k| !signs.contains(k)).cloned());
         let pick = pick_name(&names, &self.ollaya, text, self.min_probability)?;
         let how = pick.how();
         Ok(match pick.name {
+            Some(n) if agent_sign.as_ref() == Some(&n) => Dest::Agent { sign: n, how },
             Some(n) if signs.contains(&n) => Dest::Sign { sign: n, how },
             Some(n) => match panes.get(&n) {
                 Some(pane) => Dest::Pane {
@@ -277,6 +291,7 @@ impl Relay {
                     state: summarize(&reply),
                 })
             }
+            Dest::Agent { .. } => Err(anyhow::anyhow!("the agent is not reached by mail")),
             Dest::NoMatch { .. } => Err(anyhow::anyhow!("no destination")),
         }
     }
@@ -324,6 +339,25 @@ impl Relay {
         dest: &Dest,
         body: &str,
     ) -> anyhow::Result<Sent> {
+        if let Dest::Agent { sign, how } = dest {
+            let Some(agent) = self.agent.get() else {
+                return Err(anyhow::anyhow!("the agent is not running"));
+            };
+            let outcome = agent.handle(&AgentCall {
+                dongle_id: call.dongle_id.clone(),
+                channel: (call.channel != "?").then(|| call.channel.clone()),
+                freq_hz: call.freq_hz,
+                text: text.to_string(),
+                recording: call.recording.clone(),
+            });
+            let to = format!("agent {sign} ({how})");
+            self.report(call, text, source, Some(&to), outcome.clone());
+            return Ok(Sent {
+                to,
+                pane_id: None,
+                state: outcome,
+            });
+        }
         let result = self.send(dest, &call.subject(), body);
         match &result {
             Ok(sent) => self.report(call, text, source, Some(&sent.to), sent.state.clone()),
@@ -628,7 +662,7 @@ fn reply_target(reply: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn expand_home(path: &str) -> std::path::PathBuf {
+pub(crate) fn expand_home(path: &str) -> std::path::PathBuf {
     match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
         Some(rest) => std::env::var_os("USERPROFILE")
             .or_else(|| std::env::var_os("HOME"))

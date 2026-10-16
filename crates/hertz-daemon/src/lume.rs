@@ -49,6 +49,8 @@ pub fn spawn(bus: &EventBus, cfg: Option<LumeConfig>, mock: bool) {
                     ev @ (Event::Transcription { .. }
                     | Event::ServerTranscription { .. }
                     | Event::Relayed { .. }
+                    | Event::Agent { .. }
+                    | Event::AgentCallsign { .. }
                     | Event::Weather { .. }
                     | Event::SquelchEvent { .. }
                     | Event::SignalLevel { .. }
@@ -404,6 +406,48 @@ impl Feed {
                     attrs.push(("to", to));
                 }
                 self.logs.push(log_record("radio.relay", &body, attrs));
+            }
+            Event::Agent {
+                dongle_id,
+                channel,
+                freq_hz,
+                text,
+                callsign,
+                tool,
+                args,
+                decisions,
+                outcome,
+                reply,
+            } => {
+                let body = format!(
+                    "{callsign}: {tool} {args} | {outcome} | said: {reply} | heard: {text}"
+                );
+                let mut attrs = vec![
+                    ("dongle", dongle_id),
+                    ("freq_mhz", mhz(freq_hz)),
+                    ("callsign", callsign),
+                    ("tool", tool),
+                    ("args", args),
+                    ("decisions", decisions),
+                    ("outcome", outcome),
+                    ("reply", reply),
+                    ("transcript", text),
+                ];
+                if let Some(c) = channel {
+                    attrs.push(("channel", c));
+                }
+                self.logs.push(log_record("radio.agent", &body, attrs));
+            }
+            Event::AgentCallsign { callsign, previous } => {
+                let mut attrs = vec![("callsign", callsign.clone())];
+                if let Some(p) = previous {
+                    attrs.push(("previous", p));
+                }
+                self.logs.push(log_record(
+                    "radio.agent.callsign",
+                    &format!("agent call sign now {callsign}"),
+                    attrs,
+                ));
             }
             Event::Weather {
                 dongle_id,

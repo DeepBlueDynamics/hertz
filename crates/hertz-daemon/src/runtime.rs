@@ -145,8 +145,15 @@ impl Daemon {
             crate::weather::spawn(bus.clone(), Arc::clone(&transcriber), data_dir.clone())
         });
         crate::recorder::spawn_backfill(bus.clone(), transcriber, data_dir);
+        let agent_slot: crate::agent::AgentSlot = Default::default();
         if let Some(relay) = &config.relay {
-            crate::relay::spawn(&bus, relay, live_keywords, live_transcripts);
+            crate::relay::spawn(
+                &bus,
+                relay,
+                live_keywords,
+                live_transcripts,
+                agent_slot.clone(),
+            );
         }
         let recorder_tx = recorder.tx.clone();
 
@@ -248,6 +255,10 @@ impl Daemon {
             auth_token,
             weather,
         };
+
+        if let Some(relay) = config.relay.as_ref().filter(|r| r.agent) {
+            crate::agent::start(&agent_slot, state.clone(), relay);
+        }
 
         // History subscriber: records activity + transcripts from the bus.
         let history_handle = spawn_history_subscriber(state.clone());

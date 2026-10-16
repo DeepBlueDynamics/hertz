@@ -123,6 +123,15 @@ impl HyperiaClient {
         )
     }
 
+    /// Speak `text` aloud on the host (`hyperia_spoken_summary`), framed as a
+    /// transmission from this identity. Returns what was spoken.
+    pub fn spoken_summary(&self, text: &str) -> Result<String> {
+        self.call_tool(
+            "hyperia_spoken_summary",
+            serde_json::json!({ "text": text }),
+        )
+    }
+
     /// Invoke one Hyperia tool; returns its first text content block.
     fn call_tool(&self, name: &str, arguments: serde_json::Value) -> Result<String> {
         let mut req = ureq::post(&self.url)
