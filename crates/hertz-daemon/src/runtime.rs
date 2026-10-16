@@ -194,6 +194,7 @@ impl Daemon {
                 scan: dc.scan.clone().unwrap_or_default(),
                 priority: dc.priority.clone().unwrap_or_default(),
                 weather: weather_for(dc, &id, &weather, weather_tx.as_ref()),
+                gain_db: dc.gain_db,
             };
 
             let sdr_cfg = sdr_config_for(dc, center_hz, freq_hz);
@@ -489,6 +490,7 @@ struct DongleLaunchCtx {
     scan: Vec<String>,
     priority: Vec<String>,
     weather: Option<(crate::weather::WeatherControl, crate::weather::WeatherTx)>,
+    gain_db: Option<f32>,
 }
 
 /// Build the [`DspThread`] for an already-opened worker and spawn its DSP thread.
@@ -512,6 +514,7 @@ fn launch_dsp(
         scan: ctx.scan.clone(),
         priority: ctx.priority.clone(),
         weather: ctx.weather.clone(),
+        gain_db: ctx.gain_db,
     };
     let join = match ctx.role {
         DongleRole::Monitor => spawn_monitor_loop(dsp),

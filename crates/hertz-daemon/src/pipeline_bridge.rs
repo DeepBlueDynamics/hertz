@@ -69,6 +69,10 @@ pub struct DspThread {
     /// Weather sideband (scanning monitor only): its live settings and where its
     /// samples go.
     pub weather: Option<(WeatherControl, WeatherTx)>,
+    /// Fixed tuner gain from the config (None = auto). Weather samples switch to
+    /// auto gain while they run: the distant WX3 station reads about 10 dB weaker
+    /// at a fixed 40 dB, but a fixed gain keeps the scan floors steady.
+    pub gain_db: Option<f32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1123,6 +1127,9 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             set_receive_state(&dsp, &snap, "weather", Some(names.clone()), weather[0].1 as u64,
                                 Some(format!("receive offline: sampling weather {names}")));
                             wc.report(None, true);
+                            if dsp.gain_db.is_some() {
+                                let _ = dsp.worker.set_gain(hertz_sdr::Gain::Auto);
+                            }
                             let stop = || wc.turned_off_since(epoch);
                             for (id, wx_freq) in &weather {
                                 let (samples, signal_db) = sample_weather(
@@ -1147,6 +1154,9 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                     samples,
                                     signal_db,
                                 });
+                            }
+                            if let Some(db) = dsp.gain_db {
+                                let _ = dsp.worker.set_gain(hertz_sdr::Gain::Db(db.clamp(0.0, 49.6)));
                             }
                             let every = Duration::from_secs(w.every_minutes.max(1) * 60);
                             next_weather = Some(Instant::now() + every);
