@@ -36,24 +36,26 @@ async fn main() -> anyhow::Result<()> {
         .cloned()
         .or_else(|| std::env::var("HERTZ_CONFIG").ok());
     let mut config = DaemonConfig::load(config_path.as_deref())?;
-    // Optional `--weather[=WX3,...]`: NOAA weather monitoring on every scanning dongle,
-    // 3 minutes every 15, the first right away. Channels from the flag, else the
-    // config's [dongle.weather], else WX1. Receive is offline while it samples.
-    if let Some(flag) = argv
+    // Weather runs only with `--weather[=WX3,...]`: 3 minutes every 15 (or
+    // `--weather-every=<minutes>`), the first right away, on every scanning dongle.
+    // Channels from the flag, else the config's [dongle.weather], else WX1. Receive is
+    // offline while it samples. Without the flag a [dongle.weather] section is ignored.
+    let weather = argv
         .iter()
         .find(|a| *a == "--weather" || a.starts_with("--weather="))
-    {
-        let given: Vec<String> = flag
-            .strip_prefix("--weather=")
-            .map(|list| {
-                list.split(',')
-                    .map(|c| c.trim().to_uppercase())
-                    .filter(|c| !c.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-        apply_weather_flag(&mut config, &given);
-    }
+        .map(|flag| {
+            let given: Vec<String> = flag
+                .strip_prefix("--weather=")
+                .map(|list| {
+                    list.split(',')
+                        .map(|c| c.trim().to_uppercase())
+                        .filter(|c| !c.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+            (given, weather_every(&argv))
+        });
+    apply_weather_flag(&mut config, weather.as_ref());
     let bandplans_dir = locate_bandplans();
     let channels = hertz_channels::load_channels(&bandplans_dir, None::<&std::path::PathBuf>)?;
 
@@ -123,16 +125,47 @@ fn locate_bandplans() -> std::path::PathBuf {
     std::path::PathBuf::from("./bandplans")
 }
 
-/// `--weather`: 3 minutes every 15 on each scanning monitor dongle, starting now.
-fn apply_weather_flag(config: &mut DaemonConfig, given: &[String]) {
+/// Default minutes between weather samples.
+const WEATHER_EVERY_MINUTES: u64 = 15;
+
+/// `--weather-every=<minutes>`, else 15.
+fn weather_every(argv: &[String]) -> u64 {
+    argv.iter()
+        .find_map(|a| a.strip_prefix("--weather-every="))
+        .map(|m| match m.trim().parse::<u64>() {
+            Ok(n) if n > 0 => n,
+            _ => {
+                tracing::warn!(
+                    "--weather-every={m}: not a number of minutes; using {WEATHER_EVERY_MINUTES}"
+                );
+                WEATHER_EVERY_MINUTES
+            }
+        })
+        .unwrap_or(WEATHER_EVERY_MINUTES)
+}
+
+/// With `--weather` (`Some((channels, every_minutes))`): 3 minutes every
+/// `every_minutes` on each scanning monitor dongle, starting now. Without it
+/// (`None`): weather is off on every dongle, whatever the config says.
+fn apply_weather_flag(config: &mut DaemonConfig, weather: Option<&(Vec<String>, u64)>) {
     for dc in &mut config.dongles {
+        let Some((given, every_minutes)) = weather else {
+            if dc.weather.take().is_some() {
+                tracing::info!(
+                    "weather: [dongle.weather] for {} is off; pass --weather to turn it on",
+                    dc.serial
+                );
+            }
+            continue;
+        };
         let scanning = dc.role == hertz_types::DongleRole::Monitor
             && dc.scan.as_ref().is_some_and(|s| !s.is_empty());
         if !scanning {
+            dc.weather = None;
             continue;
         }
         let channels = if !given.is_empty() {
-            given.to_vec()
+            given.clone()
         } else {
             dc.weather
                 .as_ref()
@@ -141,7 +174,7 @@ fn apply_weather_flag(config: &mut DaemonConfig, given: &[String]) {
         };
         dc.weather = Some(hertz_types::WeatherConfig {
             channels,
-            every_minutes: 15,
+            every_minutes: *every_minutes,
             sample_seconds: 180,
             first_after_seconds: 0,
         });
@@ -153,7 +186,7 @@ mod weather_flag_tests {
     use super::*;
 
     #[test]
-    fn flag_sets_three_minutes_every_fifteen_starting_now() {
+    fn weather_only_with_the_flag_three_minutes_every_fifteen_starting_now() {
         let toml = r#"
             [daemon]
             listen = "127.0.0.1:0"
@@ -173,8 +206,15 @@ mod weather_flag_tests {
             squelch_db = 10.0
             record = false
         "#;
-        let mut config: DaemonConfig = toml::from_str(toml).unwrap();
-        apply_weather_flag(&mut config, &[]);
+        let parse = || -> DaemonConfig { toml::from_str(toml).unwrap() };
+        let mut config = parse();
+        apply_weather_flag(&mut config, None);
+        assert!(
+            config.dongles.iter().all(|d| d.weather.is_none()),
+            "no flag, no weather, even with [dongle.weather] in the config"
+        );
+        let mut config = parse();
+        apply_weather_flag(&mut config, Some(&(vec![], 15)));
         let w = config.dongles[0].weather.as_ref().unwrap();
         assert_eq!(
             (
@@ -189,10 +229,15 @@ mod weather_flag_tests {
             config.dongles[1].weather.is_none(),
             "a fixed-frequency dongle doesn't scan, so no weather"
         );
-        apply_weather_flag(&mut config, &["WX1".into(), "WX2".into()]);
+        apply_weather_flag(&mut config, Some(&(vec!["WX1".into(), "WX2".into()], 30)));
+        let w = config.dongles[0].weather.as_ref().unwrap();
         assert_eq!(
-            config.dongles[0].weather.as_ref().unwrap().channels,
-            vec!["WX1", "WX2"]
+            (w.channels.clone(), w.every_minutes),
+            (vec!["WX1".to_string(), "WX2".to_string()], 30)
         );
+        let argv = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(weather_every(&argv(&["hertzd", "--weather"])), 15);
+        assert_eq!(weather_every(&argv(&["hertzd", "--weather-every=30"])), 30);
+        assert_eq!(weather_every(&argv(&["hertzd", "--weather-every=x"])), 15);
     }
 }

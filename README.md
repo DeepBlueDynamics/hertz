@@ -63,16 +63,19 @@ Without `--listen` the daemon runs headless; connect a client with
 
 ## Configuration
 
-`hertzd [config.toml] [--listen] [--mock] [--weather[=WX3,...]]` (or `HERTZ_CONFIG`).
+`hertzd [config.toml] [--listen] [--mock] [--weather[=WX3,...]] [--weather-every=<minutes>]`
+(or `HERTZ_CONFIG`).
 
-`--weather` turns on NOAA weather monitoring for every scanning dongle: it samples
-the weather channels for 3 minutes every 15 minutes, starting right away, and plays
+Weather is off unless you pass `--weather`. It turns on NOAA weather monitoring for
+every scanning dongle: it samples the weather channels for 3 minutes every 15
+minutes (`--weather-every=30` for every 30), starting right away, and plays
 and live-transcribes the broadcast while it does. The full transcript is logged as
 `WEATHER | WX3 | ...` and sent to Lume as `radio.weather`. One dongle can't hear
 both, so receive on the scan channels is offline while it samples: hertzd logs
 `RADIO RECEIVE OFFLINE` / `RADIO RECEIVE BACK ONLINE`, the dongle's status message
 says so, and a `ScanState` event is published. Channels come from the flag
-(`--weather=WX3`), else the config's `[dongle.weather]`, else WX1. NOAA channels:
+(`--weather=WX3`), else the config's `[dongle.weather]`, else WX1; without the flag
+a `[dongle.weather]` section does nothing. NOAA channels:
 WX1 162.550, WX2 162.400, WX3 162.475, WX4 162.425, WX5 162.450, WX6 162.500, WX7
 162.525 MHz.
 
