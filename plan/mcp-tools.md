@@ -151,6 +151,31 @@ worker thread only takes `Retune` and `SetGain` (`hertz-sdr/src/lib.rs`), so a
 `WorkerCmd::SetSampleRate` is needed, plus the read size and frame math that
 follow the rate. `sweep` at 2.4 MS/s needs the same command.
 
+### Review findings (Confidential Turkey, 2026-10-16)
+
+The full sketch is in [ais-decoder.md](ais-decoder.md). These findings change
+the plan:
+
+1. **AIS needs no rate change.** Both channels sit ±25 kHz from 162.000 MHz,
+   inside the 240 kS/s monitor capture, so AIS moves ahead of WFM and sweep
+   (phase 3a).
+2. **`SetSampleRate` is the riskiest item.** The worker's rate is an immutable
+   local, `read_buf` and the ring size are fixed at spawn, and
+   `MONITOR_FRAME_BYTES` (`48_000 * 2`) is a compile-time const used by drain,
+   settle and the mixers. The rate has to become a per-thread runtime value. For
+   `sweep`, the 2.4 MS/s channelized path is an alternative.
+3. **One idle-sideband scheduler.** Weather is hard-coded at the scan loop's
+   idle point. AIS, `sweep` and `tune` would each add another one. Use one
+   scheduler (a due time per sideband) and a shared `capture_window` helper
+   (retune → settle → drain → frames → restore). Weather (audio) and AIS (raw
+   IQ) then differ only in what they do with each frame.
+4. **Data channels need their own mode.** `marine-ais.toml` says `mode = "nfm"`,
+   so a band group would voice-scan AIS. Add `Mode::Ais` (and `Mode::Wfm`) to
+   `hertz_types::Mode`, which already has unused `Usb`/`Lsb`.
+5. **Timed windows only see frequent transmitters.** A 60 s AIS window every
+   5 min sees class A ships (2–10 s reports) and rarely class B (about 3 min).
+   `ais_targets` and the docs should say so. A second dongle is the real answer.
+
 ### Left out
 
 - **`/stream`, `/events` and `/audio`:** live streams belong on WebSocket/SSE.
@@ -226,7 +251,9 @@ the rest and `reset_tuning` (DELETE /api/tuning).
 |---|---|---|---|
 | **1** | ops layer and registry; wrap all existing REST: `status`, `doctor`, `channels`, `transcripts`, `activity`, `recordings`, `recording`, `time`, `set_squelch` (default), `set_recording`, `set_listen`; new `wait_for_call`, `weather_sample_now`, `weather_latest` | about a day | An agent reads everything and flips what works live today |
 | **2** | ScanControl refactor; `scan_get`/`scan_set`, `lockout`/`unlock`, `hold`/`resume`, `levels`, per-channel squelch, `set_gain`; current channel in `status`; `relay_status`/`relay_set`; `lume_status`/`lume_reconnect`; `transcription_status`; `Event::Tuning`; minimal `tuning.json` | 2–3 days | Full live control with no restarts, and changes survive restarts |
-| **3** | `autotune`; `relay_resend`, `retranscribe`, `transcription_set`; full `tuning.json` and reset; **WFM demod and `tune` in WFM; `sweep` and `scan_range`; AIS decoder with `ais_start`/`ais_stop`/`ais_targets`** | 4–5 days (WFM about 1, sweep about 1, AIS about 2) | Broadcast FM, finding what's on the air, vessels on AIS |
+| **3a** | **AIS**: `decode/ais.rs` (GMSK → NRZI → HDLC → CRC → 6-bit) in hertz-dsp; `ais.rs` (AIVDM reassembly, types 1/2/3/5/18/24, target table, `Event::Ais`, `radio.ais` to Lume) in hertz-daemon; `ais_start`/`ais_stop`/`ais_targets`; the idle-sideband scheduler and `capture_window` (Review findings, 3); `Mode::Ais` | 3–4 days (demod and clock recovery are most of it) | Vessels on AIS, with no change to the capture rate |
+| **3b** | `autotune`; `relay_resend`, `retranscribe`, `transcription_set`; full `tuning.json` and reset | 2 days | Auto-tune and the rest |
+| **3c** | `WorkerCmd::SetSampleRate` and a frame size that follows the rate; WFM demod and `tune` in WFM (`Mode::Wfm`); `sweep` and `scan_range` | 3–4 days (the rate refactor is the risky part) | Broadcast FM, and finding what's on the air |
 | **4** | `decoders`: DSC (ch 70), APRS, ADS-B on a second dongle; WFM stereo/RDS; a `decoder` dongle role | open | More of the spectrum |
 
 ## Tests
