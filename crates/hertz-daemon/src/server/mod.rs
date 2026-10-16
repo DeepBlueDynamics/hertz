@@ -20,6 +20,7 @@ use hertz_types::wire::{
     TuneRequest, WsServerMsg,
 };
 use hertz_types::Event;
+use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -82,6 +83,8 @@ fn router(state: DaemonState) -> Router {
         .route("/api/time", get(get_time))
         .route("/api/doctor", get(get_doctor))
         .route("/api/weather", get(get_weather).post(set_weather))
+        .route("/api/tools", get(list_tools))
+        .route("/api/tools/:name", post(call_tool))
         .route("/mcp", post(mcp::post_mcp).get(mcp::get_mcp))
         .route("/stream", get(ws_handler))
         .route("/events", get(sse_handler))
@@ -199,7 +202,7 @@ async fn set_squelch(
 
 /// Weather sampling: the same as MCP `weather_status`.
 async fn get_weather(State(state): State<DaemonState>) -> Json<serde_json::Value> {
-    Json(mcp::weather_status(&state))
+    Json(crate::ops::weather::weather_status(&state))
 }
 
 /// Weather sampling on/off: the same body and rules as MCP `weather_set`
@@ -213,9 +216,41 @@ async fn set_weather(
     if let Err(r) = check_auth(&state, &headers, peer) {
         return r;
     }
-    match mcp::weather_set(&state, body) {
+    op_response(crate::ops::weather::weather_set(&state, body))
+}
+
+/// Every tool, as MCP `tools/list` describes it.
+async fn list_tools(State(state): State<DaemonState>) -> Json<Value> {
+    Json(Value::Array(
+        crate::ops::registry()
+            .map(|t| crate::ops::describe(&state, t))
+            .collect(),
+    ))
+}
+
+/// Call any tool: the body is its arguments, the reply its result.
+async fn call_tool(
+    State(state): State<DaemonState>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    body: Option<Json<Value>>,
+) -> Response {
+    if let Err(r) = check_auth(&state, &headers, peer) {
+        return r;
+    }
+    let args = body.map(|Json(v)| v).unwrap_or(Value::Null);
+    op_response(crate::ops::call(&state, &name, args).await)
+}
+
+fn op_response(r: crate::ops::OpResult) -> Response {
+    match r {
         Ok(v) => Json(v).into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => (
+            StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::BAD_REQUEST),
+            e.to_string(),
+        )
+            .into_response(),
     }
 }
 

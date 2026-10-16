@@ -2,45 +2,13 @@
 //! tool list, and `weather_set` turning weather sampling on and off live, seen as
 //! the scan loop's `ScanState` events.
 
-use std::sync::Arc;
+mod common;
+
 use std::time::Duration;
 
-use hertz_daemon::{Daemon, MockFactory};
-use hertz_types::{DaemonConfig, DaemonSettings, DongleConfig, DongleRole, Event, WeatherConfig};
+use common::{rpc, tool};
+use hertz_types::Event;
 use serde_json::{json, Value};
-
-fn free_port() -> String {
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = l.local_addr().unwrap();
-    drop(l);
-    addr.to_string()
-}
-
-/// POST a JSON-RPC message; (status, body or Null).
-async fn rpc(listen: &str, msg: Value) -> (u16, Value) {
-    let url = format!("http://{listen}/mcp");
-    tokio::task::spawn_blocking(move || match ureq::post(&url).send_json(msg) {
-        Ok(r) => {
-            let status = r.status();
-            let body = r.into_string().unwrap_or_default();
-            (status, serde_json::from_str(&body).unwrap_or(Value::Null))
-        }
-        Err(ureq::Error::Status(code, r)) => (code, json!(r.into_string().unwrap_or_default())),
-        Err(e) => panic!("POST /mcp: {e}"),
-    })
-    .await
-    .unwrap()
-}
-
-async fn tool(listen: &str, name: &str, args: Value) -> Value {
-    let (status, v) = rpc(
-        listen,
-        json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":args}}),
-    )
-    .await;
-    assert_eq!(status, 200, "{v}");
-    v["result"].clone()
-}
 
 /// Wait for a ScanState with this state.
 async fn scan_state(rx: &mut tokio::sync::broadcast::Receiver<Event>, want: &str) {
@@ -56,50 +24,8 @@ async fn scan_state(rx: &mut tokio::sync::broadcast::Receiver<Event>, want: &str
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mcp_weather_set_turns_sampling_on_and_off() {
-    let tmp = tempfile::tempdir().unwrap();
-    let bandplans = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bandplans");
-    let channels = hertz_channels::load_channels(&bandplans, None::<&std::path::PathBuf>).unwrap();
-    let listen = free_port();
-    let config = DaemonConfig {
-        daemon: DaemonSettings {
-            listen: listen.clone(),
-            data_dir: tmp.path().to_string_lossy().to_string(),
-            auth_token: None,
-        },
-        dongles: vec![DongleConfig {
-            serial: "MOCK01".into(),
-            role: DongleRole::Monitor,
-            bandplan: Some("marine-vhf-us".into()),
-            tap_channel: None,
-            groups: None,
-            dwell_ms: Some(150),
-            priority: None,
-            squelch_db: 10.0,
-            record: false,
-            frequency_hz: Some(156_625_000),
-            scan: Some(vec!["72".into()]),
-            // What hertzd sets without --weather: settings kept, sampling off.
-            weather: Some(WeatherConfig {
-                channels: vec!["WX1".into()],
-                every_minutes: 15,
-                sample_seconds: 60,
-                first_after_seconds: 0,
-                enabled: false,
-            }),
-            gain_db: None,
-        }],
-        transcription: None,
-        tx: None,
-        relay: None,
-        lume: None,
-    };
-    // Silence: the squelch stays shut, so the scan loop is idle.
-    let factory = MockFactory::from_closure(|_| (128u8, 128u8));
-    let daemon = Daemon::start(config, Arc::new(factory), channels)
-        .await
-        .unwrap();
+    let (daemon, listen, _tmp) = common::start().await;
     let mut events = daemon.state.bus.subscribe_events();
-    tokio::time::sleep(Duration::from_millis(300)).await;
 
     let (status, init) = rpc(
         &listen,
@@ -126,7 +52,10 @@ async fn mcp_weather_set_turns_sampling_on_and_off() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["weather_status", "weather_set"]);
+    assert!(
+        names.contains(&"weather_status") && names.contains(&"weather_set"),
+        "{names:?}"
+    );
 
     let (_, unknown) = rpc(&listen, json!({"jsonrpc":"2.0","id":3,"method":"nope"})).await;
     assert_eq!(unknown["error"]["code"], -32601);

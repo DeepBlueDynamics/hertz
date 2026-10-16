@@ -2,8 +2,7 @@
 //! own port, so an agent can drive hertz while it runs:
 //! `claude mcp add --transport http hertz http://127.0.0.1:9080/mcp`.
 //!
-//! Tools: `weather_status` and `weather_set` (turn NOAA weather sampling on and
-//! off, change its channels and interval). Auth is the REST rule (loopback is
+//! Tools come from the registry in [`crate::ops`]. Auth is the REST rule (loopback is
 //! exempt; otherwise the bearer token when one is configured), and a browser
 //! `Origin` other than localhost is refused, so a web page can't drive it.
 
@@ -14,8 +13,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde_json::{json, Value};
 
+use crate::ops;
 use crate::runtime::DaemonState;
-use crate::weather::WeatherChange;
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -33,14 +32,19 @@ pub async fn post_mcp(
     }
     match body {
         Value::Array(batch) => {
-            let out: Vec<Value> = batch.iter().filter_map(|m| handle(&state, m)).collect();
+            let mut out = Vec::new();
+            for m in &batch {
+                if let Some(r) = handle(&state, m).await {
+                    out.push(r);
+                }
+            }
             if out.is_empty() {
                 StatusCode::ACCEPTED.into_response()
             } else {
                 Json(Value::Array(out)).into_response()
             }
         }
-        m => match handle(&state, &m) {
+        m => match handle(&state, &m).await {
             Some(r) => Json(r).into_response(),
             None => StatusCode::ACCEPTED.into_response(),
         },
@@ -74,7 +78,7 @@ fn origin_ok(headers: &HeaderMap) -> bool {
 }
 
 /// One JSON-RPC message; `None` for a notification (no reply).
-fn handle(state: &DaemonState, msg: &Value) -> Option<Value> {
+async fn handle(state: &DaemonState, msg: &Value) -> Option<Value> {
     let id = msg.get("id").cloned();
     let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
     let id = id?;
@@ -87,13 +91,15 @@ fn handle(state: &DaemonState, msg: &Value) -> Option<Value> {
                 .unwrap_or(PROTOCOL_VERSION),
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "hertzd", "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "hertz radio daemon. weather_status shows NOAA weather sampling; \
-                weather_set turns it on or off. While a sample is taken (3 minutes) the \
-                scan channels are not heard.",
+            "instructions": "hertz radio daemon: read what the radio heard and control the \
+                scanner, receiver and NOAA weather sampling. While a weather sample is \
+                taken the scan channels are not heard.",
         })),
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({ "tools": tools() })),
-        "tools/call" => call(state, &params),
+        "tools/list" => Ok(json!({
+            "tools": ops::registry().map(|t| ops::describe(state, t)).collect::<Vec<_>>()
+        })),
+        "tools/call" => call(state, &params).await,
         _ => Err((-32601, format!("method not found: {method}"))),
     };
     Some(match result {
@@ -104,90 +110,27 @@ fn handle(state: &DaemonState, msg: &Value) -> Option<Value> {
     })
 }
 
-fn tools() -> Value {
-    json!([
-        {
-            "name": "weather_status",
-            "description": "NOAA weather sampling: on or off, channels, minutes between \
-                samples, whether a sample is being taken now and when the next is due.",
-            "inputSchema": { "type": "object", "properties": {} },
-        },
-        {
-            "name": "weather_set",
-            "description": "Turn NOAA weather sampling on or off while hertzd runs. On, it \
-                samples each channel for 3 minutes right away and then every \
-                every_minutes; receive on the scan channels is offline while it samples. \
-                Off stops a sample in progress.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "enabled": { "type": "boolean" },
-                    "channels": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "NOAA channel ids, WX1-WX7 (WX3 = 162.475 MHz). \
-                            Left out: unchanged.",
-                    },
-                    "every_minutes": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "Minutes between samples. Left out: unchanged.",
-                    },
-                },
-                "required": ["enabled"],
-            },
-        },
-    ])
-}
-
-fn call(state: &DaemonState, params: &Value) -> Result<Value, (i64, String)> {
+async fn call(state: &DaemonState, params: &Value) -> Result<Value, (i64, String)> {
     let name = params.get("name").and_then(Value::as_str).unwrap_or("");
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
-    let out = match name {
-        "weather_status" => Ok(weather_status(state)),
-        "weather_set" => weather_set(state, args),
-        _ => return Err((-32602, format!("unknown tool: {name}"))),
-    };
+    if ops::find(name).is_none() {
+        return Err((-32602, format!("unknown tool: {name}")));
+    }
+    let out = ops::call(state, name, args)
+        .await
+        .map_err(|e| e.to_string());
     Ok(match out {
-        Ok(v) => json!({
-            "content": [{ "type": "text", "text": v.to_string() }],
-            "structuredContent": v,
-        }),
+        Ok(mut v) => {
+            // Extra content blocks (an audio chunk) ride in `_content`.
+            let extra = v.as_object_mut().and_then(|o| o.remove(ops::CONTENT_KEY));
+            let mut content = vec![json!({ "type": "text", "text": v.to_string() })];
+            if let Some(Value::Array(blocks)) = extra {
+                content.extend(blocks);
+            }
+            json!({ "content": content, "structuredContent": v })
+        }
         Err(e) => json!({ "content": [{ "type": "text", "text": e }], "isError": true }),
     })
-}
-
-pub fn weather_status(state: &DaemonState) -> Value {
-    let mut v = serde_json::to_value(state.weather.get()).unwrap_or_default();
-    v["scanning_dongles"] = json!(state.weather.dongles());
-    v
-}
-
-/// Validate and apply a `weather_set`; the error is for the caller.
-pub fn weather_set(state: &DaemonState, args: Value) -> Result<Value, String> {
-    let change: WeatherChange =
-        serde_json::from_value(args).map_err(|e| format!("bad arguments: {e}"))?;
-    if state.weather.dongles() == 0 {
-        return Err(
-            "no dongle can sample weather (it needs role = \"monitor\" with a scan list)".into(),
-        );
-    }
-    if let Some(chs) = &change.channels {
-        for c in chs {
-            let known = state
-                .channels
-                .get_by_id(&c.trim().to_uppercase())
-                .is_some_and(|ch| ch.id.starts_with("WX"));
-            if !known {
-                return Err(format!("{c:?} is not a NOAA weather channel (WX1-WX7)"));
-            }
-        }
-    }
-    if change.every_minutes == Some(0) {
-        return Err("every_minutes must be at least 1".into());
-    }
-    state.weather.set(change);
-    Ok(weather_status(state))
 }
 
 #[cfg(test)]
