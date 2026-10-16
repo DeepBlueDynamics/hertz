@@ -58,8 +58,8 @@ attached. RO marks read-only tools, which get MCP `readOnlyHint`.
 | `channels` | ✓ | Channels by `group` or `ids`, with frequency, mode and whether each is in the scan | `/api/channels` | 1 |
 | `transcripts` | ✓ | Recent transcripts filtered by `channel`, `since`, `limit` and a `contains` text match; each with its recording file and the live/server variants when they differ | `/api/transcriptions` + recorder files | 1 |
 | `activity` | ✓ | Squelch opens/closes with signal, classification and duration | `/api/activity` | 1 |
-| `recordings` | ✓ | Recording files filtered by `channel`, `since`, `limit` | `/api/recordings` | 1 |
-| `recording` | ✓ | One recording: metadata, transcript, path; `audio: true` adds it as an MCP audio content block (WAV, capped at 2 MB) | `/api/recordings/:file` | 1 |
+| `recordings` | ✓ | Recording files filtered by `channel`, `since`, `limit`; each with its size and **`chunks`**, the number of 2 MB pieces it splits into | `/api/recordings` | 1 |
+| `recording` | ✓ | One recording: metadata, transcript, path, `chunks`; `chunk: n` adds piece n (2 MB of the WAV file's bytes, from 0) as an MCP audio content block. Any length of recording can be fetched piece by piece | `/api/recordings/:file` | 1 |
 | `wait_for_call` | ✓ | Blocks up to `timeout_s` (max 120) for the next transcript, optionally on given `channels`; returns it, or `null` on timeout. Lets an agent listen without polling | event bus | 1 |
 | `levels` | ✓ | Per channel over the last N s: p50/p95/max signal, floor, threshold, fraction open, lockout | scan telemetry rings | 2 |
 | `time` | ✓ | Daemon clock (unix and UTC) | `/api/time` | 1 |
@@ -73,6 +73,7 @@ attached. RO marks read-only tools, which get MCP `readOnlyHint`.
 | `set_recording` | Recording on/off | works live | 1 |
 | `set_listen` | Speaker on/off | works live | 1 |
 | `set_gain` | Fixed dB (0–49.6) or `auto` | `WorkerHandle::set_gain` (works live) | 2 |
+| `quick_scan` | Check one channel (or frequency) for signal now: tune there for about 2 s between hops, and return signal, floor, open or not, and whether it's locked out. Doesn't record. Replaces the AIS work for now | ScanControl command, run at the scan loop's idle point | 2 |
 | `hold` | Stay on a channel or raw frequency for N s (or until resumed): replaces `tune`, which is a no-op while scanning | ScanCmd::Hold | 2 |
 | `resume` | End a hold and go back to scanning | ScanCmd::Resume | 2 |
 
@@ -103,8 +104,8 @@ attached. RO marks read-only tools, which get MCP `readOnlyHint`.
 | `relay_resend` | | Route a past transcript again (by recording file), for example after a pane came back | 3 |
 | `retranscribe` | | Run a recording through the transcription server (medium) and return the text, without routing it | 3 |
 
-`relay_send` (route arbitrary text to a pane) is left out on purpose: it would
-let any MCP caller post as `hertz-radio`. See the open questions.
+`relay_send` (route arbitrary text to a pane) is left out: it would let any MCP
+caller post as `hertz-radio`. Kord decided against it.
 
 ### Lume
 
@@ -121,6 +122,10 @@ let any MCP caller post as `hertz-radio`. See the open questions.
 | `transcription_set` | | Live on/off; extra keywords (place names, vessel names) | 3 |
 
 ### Any frequency, any mode: FM broadcast, sweeps, AIS and other data
+
+**AIS is off the plan for now (Kord, 2026-10-16).** `quick_scan` (scanner
+controls) covers checking a channel for signal. The AIS rows and the
+[ais-decoder.md](ais-decoder.md) sketch stay for later.
 
 Kord's addition: tune to an FM broadcast station, scan FM or other ranges, and
 detect AIS and similar. An RTL-SDR covers about 24–1766 MHz. hertz demodulates
@@ -206,7 +211,16 @@ struct Tool {
 ```
 
 `tools/list` is generated from the registry, with `annotations.readOnlyHint` and
-`destructiveHint`. A test checks that each tool's schema accepts its own
+`destructiveHint`. A tool may also carry an **agent spec** (`when`, choice
+questions per argument, a stock reply), published as `_meta["hertz/decide"]`, so
+ollaya can pick it and its arguments; see [agent-loop.md](agent-loop.md).
+
+**Tools call internal functions directly.** A tool is a thin wrapper: a schema,
+its agent spec, and a call into the function that does the work. A change inside
+that function needs no tool change. A change to its arguments breaks the build
+until the wrapper is fixed, so the two can't drift silently. Only the wording
+(descriptions, `when`, option criteria) is kept by hand, and a test checks every
+tool has it. A test checks that each tool's schema accepts its own
 examples and that each REST mirror returns the same JSON.
 
 ### ScanControl (from live-tuning.md)
@@ -243,15 +257,14 @@ the rest and `reset_tuning` (DELETE /api/tuning).
 - **Origin check:** stays as it is.
 - **Bind address:** hertzd refuses to bind `0.0.0.0` or `::` (project rule).
 - **Limits:** argument ranges are validated; `wait_for_call` is capped at 120 s;
-  recording audio is capped at 2 MB; one autotune job per dongle.
+  recording audio comes in 2 MB chunks; one autotune job per dongle.
 
 ## Phases
 
 | Phase | Work | Size | Gets Kord |
 |---|---|---|---|
 | **1** | ops layer and registry; wrap all existing REST: `status`, `doctor`, `channels`, `transcripts`, `activity`, `recordings`, `recording`, `time`, `set_squelch` (default), `set_recording`, `set_listen`; new `wait_for_call`, `weather_sample_now`, `weather_latest` | about a day | An agent reads everything and flips what works live today |
-| **2** | ScanControl refactor; `scan_get`/`scan_set`, `lockout`/`unlock`, `hold`/`resume`, `levels`, per-channel squelch, `set_gain`; current channel in `status`; `relay_status`/`relay_set`; `lume_status`/`lume_reconnect`; `transcription_status`; `Event::Tuning`; minimal `tuning.json` | 2–3 days | Full live control with no restarts, and changes survive restarts |
-| **3a** | **AIS**: `decode/ais.rs` (GMSK → NRZI → HDLC → CRC → 6-bit) in hertz-dsp; `ais.rs` (AIVDM reassembly, types 1/2/3/5/18/24, target table, `Event::Ais`, `radio.ais` to Lume) in hertz-daemon; `ais_start`/`ais_stop`/`ais_targets`; the idle-sideband scheduler and `capture_window` (Review findings, 3); `Mode::Ais` | 3–4 days (demod and clock recovery are most of it) | Vessels on AIS, with no change to the capture rate |
+| **2** | ScanControl refactor; `quick_scan`; `scan_get`/`scan_set`, `lockout`/`unlock`, `hold`/`resume`, `levels`, per-channel squelch, `set_gain`; current channel in `status`; `relay_status`/`relay_set`; `lume_status`/`lume_reconnect`; `transcription_status`; `Event::Tuning`; minimal `tuning.json` | 2–3 days | Full live control with no restarts, and changes survive restarts |
 | **3b** | `autotune`; `relay_resend`, `retranscribe`, `transcription_set`; full `tuning.json` and reset | 2 days | Auto-tune and the rest |
 | **3c** | `WorkerCmd::SetSampleRate` and a frame size that follows the rate; WFM demod and `tune` in WFM (`Mode::Wfm`); `sweep` and `scan_range` | 3–4 days (the rate refactor is the risky part) | Broadcast FM, and finding what's on the air |
 | **4** | `decoders`: DSC (ch 70), APRS, ADS-B on a second dongle; WFM stereo/RDS; a `decoder` dongle role | open | More of the spectrum |
@@ -272,20 +285,21 @@ the rest and `reset_tuning` (DELETE /api/tuning).
 - **On air:** Kord drives each phase-2 control from Claude Code while keying
   up on 72 and GMRS 1.
 
-## Open questions for Kord
+## Decided (Kord, 2026-10-16)
 
-1. **Tool names:** plain (`scan_set`) or prefixed (`hertz_scan_set`)? Clients
-   namespace anyway; the plan uses plain names.
-2. **`relay_send`:** should an agent be able to post arbitrary text as
-   `hertz-radio`? Left out for now.
-3. **Recording audio over MCP:** inline (capped at 2 MB, about 20 s of 48 kHz
-   audio), or only a path? It could be downsampled to 16 kHz to fit about 60 s.
-4. **Off-loopback writes:** require a token always (the plan), or allow them
+1. **Phase 1 starts now.** Stable Xerinae builds the harness (ops layer,
+   registry, agent specs, conformance test, the agent); Confidential Turkey
+   writes the phase-1 tools against it.
+2. **Plain tool names.**
+3. **No `relay_send`.**
+4. **Recording audio of any length,** fetched in 2 MB chunks; `recordings` lists
+   each file's chunk count.
+5. **No AIS for now;** `quick_scan` instead.
+6. **The agent uses ollaya only,** with choice questions per tool; see
+   [agent-loop.md](agent-loop.md).
+
+## Still open
+
+1. **Off-loopback writes:** require a token always (the plan), or allow them
    when no `auth_token` is set (today's REST rule)?
-5. **Should `tuning.json` win over the TOML at start?** (Also open in
-   live-tuning.md.)
-6. **AIS first, or broadcast FM first?** AIS fits the marine use and the
-   existing capture. WFM needs the sample-rate change.
-7. **Second dongle:** is one available to run AIS full time, or should AIS share
-   the scan dongle in timed windows like weather?
-8. **Start phase 1 now?**
+2. **Should `tuning.json` win over the TOML at start?**
