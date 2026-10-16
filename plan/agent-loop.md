@@ -58,7 +58,8 @@ exactly what ollaya is asked:
 
 ```json
 {
-  "when": "The caller wants NOAA weather sampling turned on or off",
+  "label": "switch weather",
+  "when": "Turn the NOAA weather sampling on or off, or change how often it samples",
   "questions": {
     "enabled": { "on": "The caller wants weather turned on", "off": "The caller wants weather turned off" },
     "every_minutes": { "15": "Every fifteen minutes, or no interval given", "30": "Every thirty minutes", "60": "Every hour" }
@@ -67,7 +68,13 @@ exactly what ollaya is asked:
 }
 ```
 
+- **`label`:** the option name in the `tool` question, in plain words
+  ("speaker"). ollaya reads it along with `when`; with tool names as labels
+  (`set_listen`) it lost every speaker call.
 - **`when`:** one sentence, the criteria for this tool in the `tool` question.
+- **How to word `when`:** short and imperative ("Mute or unmute the speaker").
+  No negations, and none of another tool's words. Turkey's careful "not to turn
+  weather on or off" drew 9 of 12 test calls to `weather_sample_now`.
 - **`questions`:** argument name → option → when that option is right. The
   options are built at call time from live state (channels, WX ids), so new
   channels show up without code changes.

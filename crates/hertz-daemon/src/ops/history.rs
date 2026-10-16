@@ -19,7 +19,8 @@ pub const TOOLS: &[Tool] = &[
         input_schema: transcripts_schema,
         call: |s, a| ready(transcripts(&s, a)),
         agent: Some(|_| AgentSpec {
-            when: "The caller asks what calls they missed, or what was last heard".into(),
+            label: "recent calls".into(),
+            when: "Tell what calls were missed or what was heard on a channel".into(),
             questions: vec![],
             reply: "{result.say}".into(),
         }),

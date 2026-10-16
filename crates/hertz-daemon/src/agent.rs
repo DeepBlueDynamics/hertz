@@ -32,6 +32,18 @@ pub type AgentSlot = Arc<OnceLock<Arc<Agent>>>;
 /// The `tool` option for a call that asks for nothing hertz can do.
 pub const NOTHING: &str = "nothing";
 
+/// The `tool` option for a call that asks for nothing.
+pub const NOTHING_WHEN: &str = "Only a radio check or a greeting";
+
+/// ollaya's confidence needed to act. Reads cost nothing when wrong; a change
+/// to the radio needs more. Measured on laya:en with `tests/agent_live.rs`
+/// (18 of 21 right): wrong picks reached 0.46, and some right ones were as low
+/// as 0.11, which get "Say again" until the models are trained. Arguments have
+/// more options each and score lower.
+const MIN_READ: f64 = 0.3;
+const MIN_CHANGE: f64 = 0.5;
+const MIN_ARG: f64 = 0.3;
+
 /// At most this many calls carried out per window.
 const RATE_CALLS: usize = 10;
 const RATE_WINDOW: Duration = Duration::from_secs(600);
@@ -59,7 +71,6 @@ pub struct Agent {
     rt: tokio::runtime::Handle,
     ollaya: OllayaClient,
     hyperia: HyperiaClient,
-    min_probability: f64,
     chat: Option<String>,
     callsign: Mutex<String>,
     /// Calls already handled (recording file, or channel and text).
@@ -83,7 +94,6 @@ impl Agent {
             rt,
             ollaya: OllayaClient::new(cfg.ollaya_url.clone(), cfg.ollaya_model.clone()),
             hyperia,
-            min_probability: cfg.min_probability,
             chat: (!cfg.agent_chat.trim().is_empty()).then(|| cfg.agent_chat.trim().to_string()),
             callsign: Mutex::new(String::new()),
             handled: Mutex::new(VecDeque::new()),
@@ -190,12 +200,9 @@ impl Agent {
 
         let mut criteria: BTreeMap<String, String> = tools
             .iter()
-            .map(|(t, spec)| (t.name.to_string(), spec.when.clone()))
+            .map(|(_, spec)| (spec.label.clone(), spec.when.clone()))
             .collect();
-        criteria.insert(
-            NOTHING.into(),
-            "The call asks for nothing the radio can do, or it is only a greeting or a test".into(),
-        );
+        criteria.insert(NOTHING.into(), NOTHING_WHEN.into());
         let tool_q = BTreeMap::from([("tool".to_string(), criteria)]);
         let picked = match self.ollaya.choose(&state, &tool_q) {
             Ok(mut a) => a.remove("tool"),
@@ -210,20 +217,27 @@ impl Agent {
             return "ollaya gave no tool".into();
         };
         rec.decisions.push(decision("tool", &tool_q["tool"], &pick));
-        if pick.confidence < self.min_probability {
+        let found = tools.iter().find(|(_, s)| s.label == pick.choice);
+        let bar = match found {
+            Some((t, _)) if !t.read_only => MIN_CHANGE,
+            _ => MIN_READ,
+        };
+        if pick.confidence < bar {
             rec.tool = "say_again".into();
             rec.reply = "Say again.".into();
             return format!("tool unsure ({} p={:.2})", pick.choice, pick.confidence);
         }
-        rec.tool = pick.choice.clone();
         if pick.choice == NOTHING {
+            rec.tool = NOTHING.into();
             rec.reply = "Roger.".into();
             return "nothing to do".into();
         }
-        let Some((tool, spec)) = tools.iter().find(|(t, _)| t.name == pick.choice) else {
+        let Some((tool, spec)) = found else {
+            rec.tool = "error".into();
             return format!("ollaya picked {:?}, not a tool", pick.choice);
         };
 
+        rec.tool = tool.name.into();
         if !self.allow() {
             rec.reply = "Unable, too many commands. Stand by.".into();
             return "rate limited".into();
@@ -250,7 +264,7 @@ impl Agent {
                     return format!("no answer for {}", q.arg);
                 };
                 rec.decisions.push(decision(&q.arg, &qs[&q.arg], a));
-                if a.confidence < self.min_probability {
+                if a.confidence < MIN_ARG {
                     rec.reply = format!("Say again {}.", q.arg.replace('_', " "));
                     return format!("{} unsure ({} p={:.2})", q.arg, a.choice, a.confidence);
                 }

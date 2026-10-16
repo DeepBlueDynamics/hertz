@@ -101,7 +101,13 @@ pub fn args<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, OpError> {
 /// multiple-choice questions.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct AgentSpec {
+    /// The option name in the `tool` question: a few plain words ("speaker").
+    /// ollaya reads it with `when`, and a tool name like `set_listen` loses to
+    /// plain words.
+    pub label: String,
     /// When this tool is the right one: its criterion in the `tool` question.
+    /// Short and imperative ("Mute or unmute the speaker"); no negations and
+    /// none of another tool's words, which pull calls toward it.
     pub when: String,
     /// One choice question per argument, asked together after the tool is picked.
     pub questions: Vec<Question>,

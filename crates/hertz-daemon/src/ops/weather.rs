@@ -17,9 +17,8 @@ pub const TOOLS: &[Tool] = &[
         input_schema: no_args,
         call: |s, _| ready(Ok(weather_status(&s))),
         agent: Some(|_| AgentSpec {
-            when: "The caller asks whether weather sampling is on, or when the next \
-                weather sample is"
-                .into(),
+            label: "weather status".into(),
+            when: "Say whether weather sampling is on".into(),
             questions: vec![],
             reply: "Weather is {result.state}.".into(),
         }),
@@ -43,9 +42,8 @@ pub const TOOLS: &[Tool] = &[
         input_schema: no_args,
         call: |s, _| ready(weather_sample_now(&s)),
         agent: Some(|_| AgentSpec {
-            when: "The caller wants a single weather sample taken right now, not to \
-                turn weather sampling on or off or change its interval"
-                .into(),
+            label: "weather sample now".into(),
+            when: "Take a weather sample immediately".into(),
             questions: vec![],
             reply: "Taking a weather sample now.".into(),
         }),
@@ -58,7 +56,8 @@ pub const TOOLS: &[Tool] = &[
         input_schema: no_args,
         call: |s, _| ready(Ok(weather_latest(&s))),
         agent: Some(|_| AgentSpec {
-            when: "The caller asks what the latest weather broadcast said".into(),
+            label: "weather report".into(),
+            when: "Tell what the weather is or what the weather forecast says".into(),
             questions: vec![],
             reply: "{result.say}".into(),
         }),
@@ -91,9 +90,8 @@ fn weather_set_spec(_: &DaemonState) -> AgentSpec {
         Choice::new(m.to_string(), when, json!(m)).say(format!("every {words} minutes"))
     };
     AgentSpec {
-        when: "The caller wants NOAA weather sampling turned on or off, or its \
-            interval changed"
-            .into(),
+        label: "switch weather".into(),
+        when: "Turn the NOAA weather sampling on or off, or change how often it samples".into(),
         questions: vec![
             Question::new(
                 "enabled",

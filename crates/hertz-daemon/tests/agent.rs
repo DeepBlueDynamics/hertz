@@ -129,7 +129,7 @@ async fn agent_carries_out_a_call_and_rotates() {
     // Weather on, every thirty.
     {
         let mut a = answers.lock().unwrap();
-        a.insert("tool".into(), ("weather_set".into(), 0.93));
+        a.insert("tool".into(), ("switch weather".into(), 0.93));
         a.insert("enabled".into(), ("on".into(), 0.97));
         a.insert("every_minutes".into(), ("30".into(), 0.88));
     }
@@ -184,7 +184,7 @@ async fn agent_carries_out_a_call_and_rotates() {
     answers
         .lock()
         .unwrap()
-        .insert("tool".into(), ("weather_set".into(), 0.3));
+        .insert("tool".into(), ("switch weather".into(), 0.3));
     let out = run(call("mumble", "b.wav")).await.unwrap();
     assert!(out.starts_with("tool unsure"), "{out}");
     assert_eq!(spoken(&calls).last().unwrap(), "Say again.");

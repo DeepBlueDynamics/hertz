@@ -22,7 +22,14 @@ pub const TOOLS: &[Tool] = &[
         read_only: false,
         input_schema: record_schema,
         call: |s, a| ready(set_recording(&s, a)),
-        agent: Some(|_| toggle_spec("record", "recording")),
+        agent: Some(|_| {
+            toggle_spec(
+                "record",
+                "recording",
+                "recording",
+                "Turn recording on or off",
+            )
+        }),
     },
     Tool {
         name: "set_listen",
@@ -30,7 +37,14 @@ pub const TOOLS: &[Tool] = &[
         read_only: false,
         input_schema: listen_schema,
         call: |s, a| ready(set_listen(&s, a)),
-        agent: Some(|_| toggle_spec("listen", "the speaker")),
+        agent: Some(|_| {
+            toggle_spec(
+                "listen",
+                "the speaker",
+                "speaker",
+                "Mute or unmute the speaker",
+            )
+        }),
     },
 ];
 
@@ -75,11 +89,12 @@ fn listen_schema(_: &DaemonState) -> Value {
     })
 }
 
-fn toggle_spec(arg: &str, what: &str) -> AgentSpec {
+fn toggle_spec(arg: &str, what: &str, label: &str, when: &str) -> AgentSpec {
     let arg = arg.to_string();
     let what = what.to_string();
     AgentSpec {
-        when: format!("The caller wants {what} turned on or off"),
+        label: label.into(),
+        when: when.into(),
         questions: vec![Question::new(
             arg.clone(),
             vec![
@@ -101,9 +116,8 @@ fn toggle_spec(arg: &str, what: &str) -> AgentSpec {
 
 fn set_squelch_spec(_: &DaemonState) -> AgentSpec {
     AgentSpec {
-        when: "The caller wants the squelch changed, or the receiver to hear \
-            weaker or fewer signals"
-            .into(),
+        label: "squelch".into(),
+        when: "Change the squelch".into(),
         questions: vec![Question::new(
             "squelch_db",
             vec![

@@ -17,9 +17,8 @@ pub const TOOLS: &[Tool] = &[
         input_schema: no_args,
         call: |s, _| ready(Ok(status(&s))),
         agent: Some(|_| AgentSpec {
-            when: "The caller asks what the radio is doing or what it is scanning, \
-                or asks for the current frequency, squelch or channel"
-                .into(),
+            label: "radio status".into(),
+            when: "Tell what the radio is scanning or doing".into(),
             questions: vec![],
             reply: "{result.state}.".into(),
         }),

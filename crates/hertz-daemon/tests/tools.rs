@@ -65,9 +65,21 @@ async fn every_tool_conforms() {
             .unwrap();
     assert_eq!(rest.as_array().unwrap().len(), want.len());
 
+    let mut labels = HashSet::new();
     for t in ops::registry() {
         let Some(spec) = t.agent else { continue };
         let spec = spec(&state);
+        assert!(
+            !spec.label.trim().is_empty() && spec.label != hertz_daemon::agent::NOTHING,
+            "{}: needs a label other than nothing",
+            t.name
+        );
+        assert!(
+            labels.insert(spec.label.clone()),
+            "{}: label {:?} repeats",
+            t.name,
+            spec.label
+        );
         assert!(!spec.when.trim().is_empty(), "{}: empty when", t.name);
         assert!(!spec.reply.trim().is_empty(), "{}: empty reply", t.name);
         let mut args_seen = HashSet::new();
