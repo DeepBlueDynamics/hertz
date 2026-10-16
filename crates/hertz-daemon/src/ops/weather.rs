@@ -35,6 +35,34 @@ pub const TOOLS: &[Tool] = &[
         call: |s, a| ready(weather_set(&s, a)),
         agent: Some(weather_set_spec),
     },
+    Tool {
+        name: "weather_sample_now",
+        description: "Take one NOAA weather sample now, keeping the channels and \
+            interval. Receive on the scan channels is offline while it samples.",
+        read_only: false,
+        input_schema: no_args,
+        call: |s, _| ready(weather_sample_now(&s)),
+        agent: Some(|_| AgentSpec {
+            when: "The caller wants a single weather sample taken right now, not to \
+                turn weather sampling on or off or change its interval"
+                .into(),
+            questions: vec![],
+            reply: "Taking a weather sample now.".into(),
+        }),
+    },
+    Tool {
+        name: "weather_latest",
+        description: "The latest weather sample per channel: transcript, signal \
+            level, time and the WAV path.",
+        read_only: true,
+        input_schema: no_args,
+        call: |s, _| ready(Ok(weather_latest(&s))),
+        agent: Some(|_| AgentSpec {
+            when: "The caller asks what the latest weather broadcast said".into(),
+            questions: vec![],
+            reply: "{result.say}".into(),
+        }),
+    },
 ];
 
 fn weather_set_schema(_: &DaemonState) -> Value {
@@ -136,4 +164,58 @@ pub fn weather_set(state: &DaemonState, a: Value) -> OpResult {
     }
     state.weather.set(change);
     Ok(weather_status(state))
+}
+
+/// `weather_sample_now`: force an immediate sample, keeping the channels and
+/// interval. Re-applying the current settings bumps the epoch, which the scan
+/// loop reads as "sample now".
+pub fn weather_sample_now(state: &DaemonState) -> OpResult {
+    if state.weather.dongles() == 0 {
+        return Err(OpError::Unavailable(
+            "no dongle can sample weather (it needs role = \"monitor\" with a scan list)".into(),
+        ));
+    }
+    let settings = state.weather.get();
+    if !settings.enabled {
+        return Err(OpError::Unavailable(
+            "weather is off; turn it on with weather_set first".into(),
+        ));
+    }
+    state.weather.set(WeatherChange {
+        enabled: true,
+        channels: Some(settings.channels),
+        every_minutes: Some(settings.every_minutes),
+    });
+    Ok(weather_status(state))
+}
+
+/// `weather_latest`: the latest sample per channel, newest first.
+pub fn weather_latest(_: &DaemonState) -> Value {
+    let samples = crate::weather::latest_samples();
+    let latest = samples
+        .first()
+        .map(|s| s.transcript.clone())
+        .unwrap_or_default();
+    let list: Vec<Value> = samples
+        .iter()
+        .map(|s| {
+            json!({
+                "channel": s.channel,
+                "freq_hz": s.freq_hz,
+                "transcript": s.transcript,
+                "signal_db": s.signal_db,
+                "time_unix_ms": s.unix_ms,
+                "wav": s.wav,
+            })
+        })
+        .collect();
+    let say = match samples.first() {
+        Some(s) => format!(
+            "Weather from {}: {}",
+            s.channel,
+            super::speakable(&s.transcript, 180, "no words heard")
+        ),
+        None => "No weather sample yet.".to_string(),
+    };
+    json!({ "samples": list, "count": list.len(), "latest": latest, "say": say })
 }

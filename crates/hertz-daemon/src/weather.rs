@@ -5,9 +5,10 @@
 //! off the DSP thread, and publishes `Event::Weather`, which Lume, the TUI and the
 //! console pick up.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{Receiver, Sender};
@@ -67,6 +68,40 @@ pub fn roundup_left() -> Option<Duration> {
     }
     let elapsed = Duration::from_millis(unix_ms().saturating_sub(started));
     ROUNDUP_LENGTH.checked_sub(elapsed).filter(|d| !d.is_zero())
+}
+
+/// The latest transcribed sample per weather channel, for the `weather_latest`
+/// tool. One weather worker runs per daemon, so a process-global store is correct
+/// (the same shape as [`ROUNDUP_STARTED_MS`]).
+#[derive(Clone, Debug, Serialize)]
+pub struct WeatherLatest {
+    pub channel: String,
+    pub freq_hz: u64,
+    pub transcript: String,
+    pub signal_db: Option<f32>,
+    pub unix_ms: u64,
+    pub wav: String,
+}
+
+static LATEST: LazyLock<Mutex<HashMap<String, WeatherLatest>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Record a finished sample (called by the weather worker).
+pub fn record_latest(l: WeatherLatest) {
+    LATEST.lock().unwrap().insert(l.channel.clone(), l);
+}
+
+/// The latest sample per channel, newest-first by `unix_ms`.
+pub fn latest_samples() -> Vec<WeatherLatest> {
+    let mut v: Vec<WeatherLatest> = LATEST.lock().unwrap().values().cloned().collect();
+    v.sort_by(|a, b| b.unix_ms.cmp(&a.unix_ms));
+    v
+}
+
+/// Clear the latest samples (tests).
+#[cfg(test)]
+pub fn latest_reset() {
+    LATEST.lock().unwrap().clear();
 }
 
 /// Weather settings shared by the scan loops (readers) and MCP / REST (writers):
@@ -260,6 +295,15 @@ fn run(
             sample.channel,
             sample.freq_hz as f64 / 1e6
         );
+        let wav = path.to_string_lossy().into_owned();
+        record_latest(WeatherLatest {
+            channel: sample.channel.clone(),
+            freq_hz: sample.freq_hz,
+            transcript: text.clone(),
+            signal_db: sample.signal_db,
+            unix_ms: unix_ms(),
+            wav: wav.clone(),
+        });
         bus.publish_event(Event::Weather {
             dongle_id: sample.dongle_id,
             channel: sample.channel,
@@ -267,7 +311,7 @@ fn run(
             text,
             seconds,
             signal_db: sample.signal_db,
-            recording: Some(path.to_string_lossy().into_owned()),
+            recording: Some(wav),
         });
     }
 }
@@ -377,6 +421,42 @@ mod tests {
         assert!((seconds - 1.0).abs() < 0.01);
         assert!(recording.unwrap().ends_with("WX1.wav"));
         assert!(dir.path().join("weather").join("WX1.wav").exists());
+    }
+
+    #[test]
+    fn latest_samples_are_newest_first_per_channel() {
+        latest_reset();
+        assert!(latest_samples().is_empty());
+        record_latest(WeatherLatest {
+            channel: "WX1".into(),
+            freq_hz: 162_550_000,
+            transcript: "first".into(),
+            signal_db: Some(-3.0),
+            unix_ms: 1000,
+            wav: "/w/WX1.wav".into(),
+        });
+        record_latest(WeatherLatest {
+            channel: "WX2".into(),
+            freq_hz: 162_400_000,
+            transcript: "second".into(),
+            signal_db: None,
+            unix_ms: 2000,
+            wav: "/w/WX2.wav".into(),
+        });
+        record_latest(WeatherLatest {
+            channel: "WX1".into(),
+            freq_hz: 162_550_000,
+            transcript: "third".into(),
+            signal_db: Some(-4.0),
+            unix_ms: 3000,
+            wav: "/w/WX1.wav".into(),
+        });
+        let s = latest_samples();
+        assert_eq!(s.len(), 2, "WX1 was overwritten by its newer sample");
+        assert_eq!(s[0].channel, "WX1", "newest first");
+        assert_eq!(s[0].transcript, "third");
+        assert_eq!(s[1].channel, "WX2");
+        latest_reset();
     }
 }
 

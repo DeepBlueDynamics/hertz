@@ -259,3 +259,39 @@ pub fn describe(state: &DaemonState, tool: &Tool) -> Value {
 pub fn no_args(_: &DaemonState) -> Value {
     json!({ "type": "object", "properties": {} })
 }
+
+/// Text short enough to speak in a stock reply: whole words up to `max`
+/// characters, with "…" when cut; `empty` when there's nothing.
+pub fn speakable(text: &str, max: usize, empty: &str) -> String {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return empty.to_string();
+    }
+    if text.chars().count() <= max {
+        return text;
+    }
+    let mut out = String::new();
+    for w in text.split(' ') {
+        if out.chars().count() + w.chars().count() + 1 > max {
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(w);
+    }
+    out.push('…');
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::speakable;
+
+    #[test]
+    fn speakable_cuts_on_words() {
+        assert_eq!(speakable("  ", 10, "Nothing."), "Nothing.");
+        assert_eq!(speakable("short one", 20, ""), "short one");
+        assert_eq!(speakable("one two three four", 10, ""), "one two…");
+    }
+}
