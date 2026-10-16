@@ -3,6 +3,7 @@
 //! when `auth_token` is configured; loopback is exempt.
 
 pub mod audio_endpoint;
+pub mod mcp;
 
 use std::net::SocketAddr;
 
@@ -80,6 +81,8 @@ fn router(state: DaemonState) -> Router {
         .route("/api/entropy", get(get_entropy))
         .route("/api/time", get(get_time))
         .route("/api/doctor", get(get_doctor))
+        .route("/api/weather", get(get_weather).post(set_weather))
+        .route("/mcp", post(mcp::post_mcp).get(mcp::get_mcp))
         .route("/stream", get(ws_handler))
         .route("/events", get(sse_handler))
         .route("/audio", get(audio_endpoint::audio_handler))
@@ -192,6 +195,28 @@ async fn set_squelch(
     };
     control.set_squelch(req.squelch_db);
     (StatusCode::OK, "ok").into_response()
+}
+
+/// Weather sampling: the same as MCP `weather_status`.
+async fn get_weather(State(state): State<DaemonState>) -> Json<serde_json::Value> {
+    Json(mcp::weather_status(&state))
+}
+
+/// Weather sampling on/off: the same body and rules as MCP `weather_set`
+/// (`{"enabled": true, "channels": ["WX3"], "every_minutes": 15}`).
+async fn set_weather(
+    State(state): State<DaemonState>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    if let Err(r) = check_auth(&state, &headers, peer) {
+        return r;
+    }
+    match mcp::weather_set(&state, body) {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+    }
 }
 
 async fn set_recording(

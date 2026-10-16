@@ -144,28 +144,30 @@ fn weather_every(argv: &[String]) -> u64 {
         .unwrap_or(WEATHER_EVERY_MINUTES)
 }
 
-/// With `--weather` (`Some((channels, every_minutes))`): 3 minutes every
-/// `every_minutes` on each scanning monitor dongle, starting now. Without it
-/// (`None`): weather is off on every dongle, whatever the config says.
+/// Weather settings for each scanning monitor dongle: 3 minutes every
+/// `every_minutes`, the first right away. With `--weather` (`Some((channels,
+/// every_minutes))`) sampling is on; without it (`None`) it's off, whatever the
+/// config says, but the settings stay so `weather_set` over MCP can turn it on.
 fn apply_weather_flag(config: &mut DaemonConfig, weather: Option<&(Vec<String>, u64)>) {
     for dc in &mut config.dongles {
-        let Some((given, every_minutes)) = weather else {
-            if dc.weather.take().is_some() {
-                tracing::info!(
-                    "weather: [dongle.weather] for {} is off; pass --weather to turn it on",
-                    dc.serial
-                );
-            }
-            continue;
-        };
         let scanning = dc.role == hertz_types::DongleRole::Monitor
             && dc.scan.as_ref().is_some_and(|s| !s.is_empty());
         if !scanning {
             dc.weather = None;
             continue;
         }
+        let (given, every_minutes) = match weather {
+            Some((given, every)) => (given.as_slice(), *every),
+            None => (&[][..], WEATHER_EVERY_MINUTES),
+        };
+        if weather.is_none() && dc.weather.is_some() {
+            tracing::info!(
+                "weather: [dongle.weather] for {} is off; pass --weather (or weather_set over MCP) to turn it on",
+                dc.serial
+            );
+        }
         let channels = if !given.is_empty() {
-            given.clone()
+            given.to_vec()
         } else {
             dc.weather
                 .as_ref()
@@ -174,9 +176,10 @@ fn apply_weather_flag(config: &mut DaemonConfig, weather: Option<&(Vec<String>, 
         };
         dc.weather = Some(hertz_types::WeatherConfig {
             channels,
-            every_minutes: *every_minutes,
+            every_minutes,
             sample_seconds: 180,
             first_after_seconds: 0,
+            enabled: weather.is_some(),
         });
     }
 }
@@ -209,10 +212,17 @@ mod weather_flag_tests {
         let parse = || -> DaemonConfig { toml::from_str(toml).unwrap() };
         let mut config = parse();
         apply_weather_flag(&mut config, None);
+        let w = config.dongles[0].weather.as_ref().unwrap();
         assert!(
-            config.dongles.iter().all(|d| d.weather.is_none()),
+            !w.enabled,
             "no flag, no weather, even with [dongle.weather] in the config"
         );
+        assert_eq!(
+            (w.channels.clone(), w.every_minutes, w.sample_seconds),
+            (vec!["WX3".to_string()], 15, 180),
+            "kept for turning it on over MCP"
+        );
+        assert!(config.dongles[1].weather.is_none());
         let mut config = parse();
         apply_weather_flag(&mut config, Some(&(vec![], 15)));
         let w = config.dongles[0].weather.as_ref().unwrap();
@@ -221,9 +231,10 @@ mod weather_flag_tests {
                 w.channels.clone(),
                 w.every_minutes,
                 w.sample_seconds,
-                w.first_after_seconds
+                w.first_after_seconds,
+                w.enabled
             ),
-            (vec!["WX3".to_string()], 15, 180, 0)
+            (vec!["WX3".to_string()], 15, 180, 0, true)
         );
         assert!(
             config.dongles[1].weather.is_none(),

@@ -318,6 +318,10 @@ pub struct WeatherConfig {
     /// The first sample, this long after start.
     #[serde(default = "default_weather_first")]
     pub first_after_seconds: u64,
+    /// Sampling on. hertzd sets this from `--weather`; off, the settings are kept
+    /// for when it's turned on over MCP (`weather_set`) or `POST /api/weather`.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 impl Default for WeatherConfig {
@@ -327,6 +331,7 @@ impl Default for WeatherConfig {
             every_minutes: default_weather_every(),
             sample_seconds: default_weather_sample(),
             first_after_seconds: default_weather_first(),
+            enabled: true,
         }
     }
 }

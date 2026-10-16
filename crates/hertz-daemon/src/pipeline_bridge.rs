@@ -22,7 +22,7 @@ use hertz_dsp::classify::SignalClassification;
 use hertz_dsp::pipeline::{Pipeline, PipelineConfig, PipelineEvent, AUDIO_SAMPLE_RATE, SDR_RATE};
 use hertz_dsp::{AudioKind, Complex32, Mode};
 use hertz_sdr::{WorkerEvent, WorkerHandle};
-use hertz_types::{Channel, Event, WeatherConfig};
+use hertz_types::{Channel, Event};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -30,7 +30,7 @@ use crate::audio::AudioFrame;
 use crate::control::{DongleControl, DongleControlSnapshot};
 use crate::recorder::{RecorderTx, TransmissionJob};
 use crate::spectrum::{SpectrumEmitter, SpectrumFrame};
-use crate::weather::{WeatherSample, WeatherTx};
+use crate::weather::{WeatherControl, WeatherSample, WeatherTx};
 
 /// Monitor frame: 48 000 IQ pairs = 200 ms at 240 kS/s (one SDR read).
 const MONITOR_FRAME_BYTES: usize = 48_000 * 2;
@@ -66,8 +66,9 @@ pub struct DspThread {
     pub scan: Vec<String>,
     /// Priority channels (ids or groups), checked every other hop while scanning.
     pub priority: Vec<String>,
-    /// Weather sideband (scanning monitor only) and where its samples go.
-    pub weather: Option<(WeatherConfig, WeatherTx)>,
+    /// Weather sideband (scanning monitor only): its live settings and where its
+    /// samples go.
+    pub weather: Option<(WeatherControl, WeatherTx)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -955,35 +956,11 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             let mut settle_bytes = SETTLE_BYTES;
             let mut last_open: Option<Instant> = None;
 
-            let weather: Vec<(String, u32)> = dsp
-                .weather
-                .iter()
-                .flat_map(|(w, _)| &w.channels)
-                .filter_map(|id| match dsp.channels.get_by_id(id) {
-                    Some(c) => Some((c.id.clone(), c.freq_hz as u32)),
-                    None => {
-                        warn!("weather: unknown channel id {id:?}, skipping");
-                        None
-                    }
-                })
-                .collect();
-            let mut next_weather = dsp
-                .weather
-                .as_ref()
-                .filter(|_| !weather.is_empty())
-                .map(|(w, _)| Instant::now() + Duration::from_secs(w.first_after_seconds));
-            if let Some((w, _)) = dsp.weather.as_ref().filter(|_| !weather.is_empty()) {
-                tracing::info!(
-                    "weather: sampling {} for {} s every {} min while the scan is idle",
-                    weather
-                        .iter()
-                        .map(|(id, _)| id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(","),
-                    w.sample_seconds,
-                    w.every_minutes
-                );
-            }
+            // Weather sampling, read live at each idle point: MCP (`weather_set`) and
+            // POST /api/weather turn it on and off and change channels or interval.
+            let mut wx_epoch: Option<u64> = None;
+            let mut weather: Vec<(String, u32)> = Vec::new();
+            let mut next_weather: Option<Instant> = None;
 
             while !dsp.shutdown.load(Ordering::Relaxed) {
                 poll_worker_events(&dsp);
@@ -1115,9 +1092,29 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         }
                         last_open = None;
                     }
-                    // Idle between calls: take the weather sample if it's due.
-                    if let (Some(due), Some((w, tx))) = (next_weather, dsp.weather.as_ref()) {
-                        if now >= due {
+                    // Idle between calls: pick up weather changes, then take the
+                    // sample if it's due.
+                    if let Some((wc, tx)) = dsp.weather.as_ref() {
+                        let (w, epoch) = wc.snapshot();
+                        if wx_epoch != Some(epoch) {
+                            let first = wx_epoch.is_none();
+                            wx_epoch = Some(epoch);
+                            weather = weather_channels(&dsp, &w.channels);
+                            // On: the first sample right away, as with --weather.
+                            next_weather = (w.enabled && !weather.is_empty()).then_some(now);
+                            if next_weather.is_some() {
+                                info!(
+                                    "weather: sampling {} for {} s every {} min while the scan is idle",
+                                    w.channels.join(","),
+                                    w.sample_seconds,
+                                    w.every_minutes
+                                );
+                            } else if !first {
+                                info!("weather: off; scanning only");
+                            }
+                            wc.report(next_weather.map(|_| Duration::ZERO), false);
+                        }
+                        if next_weather.is_some_and(|due| now >= due) {
                             let mins = (w.sample_seconds * weather.len() as u64).div_ceil(60);
                             let names = weather.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>().join(",");
                             warn!(
@@ -1125,6 +1122,8 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             );
                             set_receive_state(&dsp, &snap, "weather", Some(names.clone()), weather[0].1 as u64,
                                 Some(format!("receive offline: sampling weather {names}")));
+                            wc.report(None, true);
+                            let stop = || wc.turned_off_since(epoch);
                             for (id, wx_freq) in &weather {
                                 let (samples, signal_db) = sample_weather(
                                     &dsp,
@@ -1132,9 +1131,14 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                     id,
                                     *wx_freq,
                                     Duration::from_secs(w.sample_seconds),
+                                    &stop,
                                 );
                                 if dsp.shutdown.load(Ordering::Relaxed) {
                                     return;
+                                }
+                                if stop() {
+                                    info!("weather: turned off during the {id} sample; dropping it");
+                                    break;
                                 }
                                 let _ = tx.try_send(WeatherSample {
                                     dongle_id: snap.dongle_id.clone(),
@@ -1144,10 +1148,14 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                     signal_db,
                                 });
                             }
-                            next_weather = Some(
-                                Instant::now() + Duration::from_secs(w.every_minutes.max(1) * 60),
-                            );
-                            info!("RADIO RECEIVE BACK ONLINE | weather sample done; scanning again (next sample in {} min)", w.every_minutes);
+                            let every = Duration::from_secs(w.every_minutes.max(1) * 60);
+                            next_weather = Some(Instant::now() + every);
+                            wc.report(Some(every), false);
+                            if stop() {
+                                info!("RADIO RECEIVE BACK ONLINE | weather off; scanning again");
+                            } else {
+                                info!("RADIO RECEIVE BACK ONLINE | weather sample done; scanning again (next sample in {} min)", w.every_minutes);
+                            }
                             set_receive_state(&dsp, &snap, "scanning", None, groups[g].center as u64, None);
                             let _ = dsp.worker.retune(groups[g].center);
                             acc.clear();
@@ -1321,16 +1329,31 @@ fn set_receive_state(
     });
 }
 
+/// Weather channel ids to (id, frequency), skipping unknown ones.
+fn weather_channels(dsp: &DspThread, ids: &[String]) -> Vec<(String, u32)> {
+    ids.iter()
+        .filter_map(|id| match dsp.channels.get_by_id(id) {
+            Some(c) => Some((c.id.clone(), c.freq_hz as u32)),
+            None => {
+                warn!("weather: unknown channel id {id:?}, skipping");
+                None
+            }
+        })
+        .collect()
+}
+
 /// Tune `freq` and collect `length` of demodulated audio for the weather sideband.
 /// The squelch doesn't gate it (a broadcast is continuous), and nothing is
 /// dispatched: no squelch events, recordings, relay or speaker. Gives up after
-/// `length` plus 10 s if the dongle stops delivering, returning what it has.
+/// `length` plus 10 s if the dongle stops delivering, returning what it has, and
+/// stops early when `stop` says weather was turned off.
 fn sample_weather(
     dsp: &DspThread,
     consumer: &mut rtrb::Consumer<u8>,
     channel: &str,
     freq: u32,
     length: Duration,
+    stop: &dyn Fn() -> bool,
 ) -> (Vec<f32>, Option<f32>) {
     let dongle_id = dsp.control.snapshot().dongle_id;
     let snap = dsp.control.snapshot();
@@ -1356,6 +1379,9 @@ fn sample_weather(
     crate::weather::roundup_reset();
     let mut extended = false;
     while !dsp.shutdown.load(Ordering::Relaxed) && Instant::now() < give_up {
+        if stop() {
+            break;
+        }
         if audio.len() >= want {
             match crate::weather::roundup_left() {
                 Some(left) if audio.len() < cap => {

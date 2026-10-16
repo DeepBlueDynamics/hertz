@@ -35,6 +35,8 @@ pub struct DaemonState {
     pub channels: Arc<ChannelDb>,
     pub started_at: std::time::Instant,
     pub auth_token: Option<String>,
+    /// Weather sampling, switched live by MCP and REST.
+    pub weather: crate::weather::WeatherControl,
 }
 
 impl DaemonState {
@@ -134,6 +136,11 @@ impl Daemon {
         let data_dir = std::path::PathBuf::from(&config.daemon.data_dir);
         let recorder =
             RecorderHandle::spawn(bus.clone(), data_dir.clone(), Arc::clone(&transcriber));
+        // One weather setting for every scanning dongle; off unless --weather, and
+        // turned on and off live over MCP (weather_set) or POST /api/weather.
+        let weather = crate::weather::WeatherControl::new(
+            config.dongles.iter().find_map(|d| d.weather.as_ref()),
+        );
         let weather_tx = config.dongles.iter().any(|d| d.weather.is_some()).then(|| {
             crate::weather::spawn(bus.clone(), Arc::clone(&transcriber), data_dir.clone())
         });
@@ -186,7 +193,7 @@ impl Daemon {
                 serial: dc.serial.clone(),
                 scan: dc.scan.clone().unwrap_or_default(),
                 priority: dc.priority.clone().unwrap_or_default(),
-                weather: weather_for(dc, &id, weather_tx.as_ref()),
+                weather: weather_for(dc, &id, &weather, weather_tx.as_ref()),
             };
 
             let sdr_cfg = sdr_config_for(dc, center_hz, freq_hz);
@@ -238,6 +245,7 @@ impl Daemon {
             channels,
             started_at: std::time::Instant::now(),
             auth_token,
+            weather,
         };
 
         // History subscriber: records activity + transcripts from the bus.
@@ -480,7 +488,7 @@ struct DongleLaunchCtx {
     /// Monitor-role scan list (channel ids); empty = fixed frequency.
     scan: Vec<String>,
     priority: Vec<String>,
-    weather: Option<(hertz_types::WeatherConfig, crate::weather::WeatherTx)>,
+    weather: Option<(crate::weather::WeatherControl, crate::weather::WeatherTx)>,
 }
 
 /// Build the [`DspThread`] for an already-opened worker and spawn its DSP thread.
@@ -647,16 +655,18 @@ fn warn_out_of_span_channels(
 fn weather_for(
     dc: &DongleConfig,
     id: &str,
+    control: &crate::weather::WeatherControl,
     tx: Option<&crate::weather::WeatherTx>,
-) -> Option<(hertz_types::WeatherConfig, crate::weather::WeatherTx)> {
-    let w = dc.weather.clone()?;
+) -> Option<(crate::weather::WeatherControl, crate::weather::WeatherTx)> {
+    dc.weather.as_ref()?;
     let scanning =
         dc.role == DongleRole::Monitor && dc.scan.as_ref().is_some_and(|s| !s.is_empty());
     if !scanning {
         warn!("dongle {id}: weather needs role = \"monitor\" with a scan list; ignoring it");
         return None;
     }
-    Some((w, tx?.clone()))
+    control.add_dongle();
+    Some((control.clone(), tx?.clone()))
 }
 
 /// Pick the transcription engine from config. `whistle` runs Cactus Whistle on-device;

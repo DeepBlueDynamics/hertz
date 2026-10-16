@@ -79,6 +79,22 @@ a `[dongle.weather]` section does nothing. NOAA channels:
 WX1 162.550, WX2 162.400, WX3 162.475, WX4 162.425, WX5 162.450, WX6 162.500, WX7
 162.525 MHz.
 
+Weather can also be switched while hertzd runs, from hertzd's MCP server at
+`/mcp` on the same port:
+
+```sh
+claude mcp add --transport http hertz http://127.0.0.1:9080/mcp
+```
+
+| Tool | Does |
+|---|---|
+| `weather_status` | On or off, channels, minutes between samples, whether it is sampling now, when the next sample is due |
+| `weather_set` | `{"enabled": true, "channels": ["WX3"], "every_minutes": 15}`: on samples right away, then every `every_minutes`; off stops a sample in progress. Left-out fields keep their value |
+
+`GET`/`POST /api/weather` do the same over REST. `/mcp` follows the REST auth
+rule (loopback is exempt, otherwise the bearer token when one is set) and refuses
+a browser `Origin` other than localhost.
+
 A working native config:
 
 ```toml

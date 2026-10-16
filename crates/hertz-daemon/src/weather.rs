@@ -7,12 +7,13 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{Receiver, Sender};
 use hertz_dsp::pipeline::AUDIO_SAMPLE_RATE;
-use hertz_types::Event;
+use hertz_types::{Event, WeatherConfig};
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::bus::EventBus;
@@ -66,6 +67,124 @@ pub fn roundup_left() -> Option<Duration> {
     }
     let elapsed = Duration::from_millis(unix_ms().saturating_sub(started));
     ROUNDUP_LENGTH.checked_sub(elapsed).filter(|d| !d.is_zero())
+}
+
+/// Weather settings shared by the scan loops (readers) and MCP / REST (writers):
+/// turn sampling on and off and change channels or interval while hertzd runs.
+/// One set for every scanning dongle, like the `--weather` flag.
+#[derive(Clone)]
+pub struct WeatherControl(Arc<Mutex<WeatherState>>);
+
+#[derive(Clone, Debug)]
+struct WeatherState {
+    settings: WeatherSettings,
+    /// Bumped on every change; a scan loop seeing a new epoch reschedules.
+    epoch: u64,
+    /// Scan loops that can sample (scanning monitor dongles).
+    dongles: usize,
+}
+
+/// What `weather_status` reports.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct WeatherSettings {
+    pub enabled: bool,
+    pub channels: Vec<String>,
+    pub every_minutes: u64,
+    pub sample_seconds: u64,
+    /// Whether a sample is being taken now (receive is offline).
+    pub sampling: bool,
+    /// When the next sample is due (unix ms), while on.
+    pub next_sample_unix_ms: Option<u64>,
+}
+
+/// A change from `weather_set`; fields left out keep their value.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct WeatherChange {
+    pub enabled: bool,
+    pub channels: Option<Vec<String>>,
+    pub every_minutes: Option<u64>,
+}
+
+impl WeatherControl {
+    pub fn new(cfg: Option<&WeatherConfig>) -> Self {
+        let cfg = cfg.cloned().unwrap_or(WeatherConfig {
+            channels: vec!["WX1".into()],
+            every_minutes: 15,
+            sample_seconds: 180,
+            first_after_seconds: 0,
+            enabled: false,
+        });
+        Self(Arc::new(Mutex::new(WeatherState {
+            settings: WeatherSettings {
+                enabled: cfg.enabled,
+                channels: cfg.channels,
+                every_minutes: cfg.every_minutes.max(1),
+                sample_seconds: cfg.sample_seconds.max(1),
+                sampling: false,
+                next_sample_unix_ms: None,
+            },
+            epoch: 0,
+            dongles: 0,
+        })))
+    }
+
+    pub fn get(&self) -> WeatherSettings {
+        self.0.lock().unwrap().settings.clone()
+    }
+
+    /// Scanning dongles that take weather samples.
+    pub fn dongles(&self) -> usize {
+        self.0.lock().unwrap().dongles
+    }
+
+    pub(crate) fn add_dongle(&self) {
+        self.0.lock().unwrap().dongles += 1;
+    }
+
+    /// The settings and their epoch, for a scan loop.
+    pub(crate) fn snapshot(&self) -> (WeatherSettings, u64) {
+        let g = self.0.lock().unwrap();
+        (g.settings.clone(), g.epoch)
+    }
+
+    /// Apply a change. Turning it on (or changing it while on) samples right away.
+    pub fn set(&self, change: WeatherChange) -> WeatherSettings {
+        let mut g = self.0.lock().unwrap();
+        let s = &mut g.settings;
+        s.enabled = change.enabled;
+        if let Some(c) = change.channels.filter(|c| !c.is_empty()) {
+            s.channels = c.iter().map(|c| c.trim().to_uppercase()).collect();
+        }
+        if let Some(m) = change.every_minutes {
+            s.every_minutes = m.max(1);
+        }
+        if !s.enabled {
+            s.next_sample_unix_ms = None;
+        }
+        g.epoch += 1;
+        info!(
+            "weather: turned {} ({}, 3 min every {} min)",
+            if g.settings.enabled { "on" } else { "off" },
+            g.settings.channels.join(","),
+            g.settings.every_minutes
+        );
+        g.settings.clone()
+    }
+
+    /// A scan loop reports when it will sample next, and whether it is sampling.
+    pub(crate) fn report(&self, next: Option<Duration>, sampling: bool) {
+        let mut g = self.0.lock().unwrap();
+        g.settings.sampling = sampling;
+        g.settings.next_sample_unix_ms = next
+            .filter(|_| g.settings.enabled)
+            .map(|d| unix_ms() + d.as_millis() as u64);
+    }
+
+    /// Whether the settings changed since `epoch` and sampling is now off.
+    pub(crate) fn turned_off_since(&self, epoch: u64) -> bool {
+        let g = self.0.lock().unwrap();
+        g.epoch != epoch && !g.settings.enabled
+    }
 }
 
 /// Audio RMS above this is open-squelch static, not a station: an FM carrier quiets
