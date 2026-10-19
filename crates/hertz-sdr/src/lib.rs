@@ -525,7 +525,7 @@ impl SdrWorker {
                             // Release the USB interface first: opening the same
                             // dongle while this handle still claims it fails on
                             // Linux, so the reconnect never succeeded there.
-                            device = Box::new(ClosedDevice);
+                            drop(std::mem::replace(&mut device, Box::new(ClosedDevice)));
                             let mut attempts = 0u32;
                             let _ = event_tx.send(WorkerEvent::DeviceLost);
                             stats_clone.epoch.fetch_add(1, Ordering::Relaxed);
