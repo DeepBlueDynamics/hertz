@@ -5,3 +5,6 @@ data/
 !**/fixtures/**/*.wav
 !**/fixtures/*.wav
 .package-cli/
+
+# A local Lume store (lume serve --otlp --ti-store ./.lume-index)
+.lume-index/
