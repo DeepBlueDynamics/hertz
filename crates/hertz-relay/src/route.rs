@@ -126,16 +126,29 @@ pub fn pick_name(
             confirm: None,
         });
     }
-    // ollaya reads each option's description; the label (the exact name) only maps
-    // its answer back. Descriptions use the name without emoji: a trailing 🧇
-    // dropped "Annual Echidna, Annual Echidna, come in" from 1.00 to 0.38 for that
-    // pane. Wording measured on 12 labelled calls: "speaker is calling X by name"
-    // 10/12 with no false routes, vs 7/11 for the previous "addressed to" wording.
-    let mut criteria: BTreeMap<String, String> = names
+    // ollaya reads each option's label as well as its description, so both use the
+    // name without emoji: a trailing 🧇 in the description dropped "Annual Echidna,
+    // Annual Echidna, come in" from 1.00 to 0.38, and the label "Zippy Lungfish 🦦 "
+    // scored a clear call 0.44 where "Zippy Lungfish" scores 1.00. Labels map back
+    // to the names. Wording measured on 12 labelled calls: "speaker is calling X by
+    // name" 10/12 with no false routes, vs 7/11 for the previous "addressed to"
+    // wording; a JSON state listing the names scored 0/12.
+    let mut name_of: BTreeMap<String, String> = BTreeMap::new();
+    for n in names {
+        let spoken = spoken_name(n);
+        // Two names that read the same (or an empty one) keep their full label.
+        let label = if spoken.is_empty() || spoken == NO_PANE || name_of.contains_key(&spoken) {
+            n.clone()
+        } else {
+            spoken
+        };
+        name_of.insert(label, n.clone());
+    }
+    let mut criteria: BTreeMap<String, String> = name_of
         .iter()
-        .map(|n| {
+        .map(|(label, n)| {
             (
-                n.clone(),
+                label.clone(),
                 format!("The speaker is calling {} by name.", spoken_name(n)),
             )
         })
@@ -163,7 +176,7 @@ pub fn pick_name(
         ));
     }
     let state = serde_json::Value::String(state);
-    let answer = ollaya
+    let mut answer = ollaya
         .choose(&state, &questions)?
         .remove("pane")
         .expect("choose returns every asked question");
@@ -172,6 +185,9 @@ pub fn pick_name(
         .get(&answer.choice)
         .copied()
         .unwrap_or(answer.confidence);
+    if let Some(n) = name_of.get(&answer.choice) {
+        answer.choice = n.clone();
+    }
     // On a garbled call-up ollaya can be confidently wrong, and it leans toward the
     // first option listed ("Thank you, have a stable day." scored 0.81 for whichever
     // pane sorted first). So a pick only counts when the transcript says the name,
