@@ -153,6 +153,7 @@ impl Daemon {
                 live_keywords,
                 live_transcripts,
                 agent_slot.clone(),
+                crate::relay::Whisper::from_config(config.transcription.as_ref(), relay),
             );
         }
         let recorder_tx = recorder.tx.clone();

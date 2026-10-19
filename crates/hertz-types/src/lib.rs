@@ -432,6 +432,14 @@ pub struct TranscriptionConfig {
     #[serde(default)]
     pub live: bool,
     pub cleanup: Option<CleanupConfig>,
+    /// A Whisper transcription service (deploy/transcription), local or remote,
+    /// for a second opinion on each relayed call: `"http://<host>:8765"`. Unset:
+    /// on-device transcription only, and Whisper is never contacted.
+    #[serde(default)]
+    pub whisper_url: Option<String>,
+    /// The Whisper model the service runs (for the log); default "medium".
+    #[serde(default)]
+    pub whisper_model: Option<String>,
 }
 
 fn default_engine() -> String {
@@ -539,7 +547,9 @@ pub struct RelayConfig {
 }
 
 fn default_verify_url() -> String {
-    "http://localhost:8765".to_string()
+    // Off unless configured: hertz is on-device only by default. Prefer
+    // `[transcription] whisper_url`; this is the older spelling.
+    String::new()
 }
 fn default_verify_model() -> String {
     "medium".to_string()

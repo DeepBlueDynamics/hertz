@@ -137,15 +137,14 @@ RELAY | Ch 71 | can't find a pane for "Alpha India, come in" (best guess "(none 
 `awaiting_approval` is Hyperia holding the first message to a pane until you
 approve; later messages to that pane go straight through.
 
-**Double-check.** After a call is sent, if the transcription service at
-`verify_url` (default `http://localhost:8765`, Whisper `verify_model` = `medium`)
-is up, hertzd re-transcribes the recording there. ollaya is given the words each
-transcript heard that the other didn't and decides whether the server version
-adds real information (a call sign, name, place, number or instruction) or only
-differs trivially. If it adds something, a follow-up goes to the same pane with
-subject `Re: [radio] Ch 72 156.625 MHz`, the server transcript and the original.
-The check never delays the first message, is skipped while the service is down,
-and is turned off with `verify_url = ""`. To run the service:
+**Double-check (optional).** With `[transcription] whisper_url` set (a Whisper
+service from `deploy/transcription`, here or on another machine), hertzd
+re-transcribes each delivered call there. If Whisper's words differ, a follow-up
+goes to the same pane with subject `Re: [radio] Ch 72 156.625 MHz`, the server
+transcript and the original. ollaya only labels it, as "heard more" or "may read
+better". The check never delays the first message. While the service is down
+it's skipped, and that's logged once. Without `whisper_url`, hertz is on-device
+only and never contacts Whisper. To run the service:
 `cd deploy/transcription && docker compose up -d --build` (see
 [deploy/transcription](../deploy/transcription/README.md)).
 
@@ -158,7 +157,7 @@ the list changes.
 
 **Retry on a miss.** Pane names are unusual words that the on-device model often
 mishears ("You're echinada" for "Annual Echidna"). When the on-device transcript
-names no pane and the transcription service is up, hertzd routes the server's
+names no pane and Whisper is configured and up, hertzd routes the server's
 transcript instead and, on a match, sends that version once (with the on-device
 text alongside). The console logs `server transcript "..." -> <pane>` or
 `names no pane either`.

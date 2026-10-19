@@ -73,6 +73,10 @@ struct Relay {
     ollaya: OllayaClient,
     verify: Option<TranscriptionService>,
     verify_model: String,
+    verify_url: String,
+    /// Whether the configured Whisper service answered last time, so its going
+    /// down or coming back is logged once, not on every call.
+    whisper_up: Mutex<Option<bool>>,
     min_probability: f64,
     bus: EventBus,
     /// The Hyperia pane hertzd runs in (`HYPERIA_PANE`), never a destination.
@@ -144,6 +148,35 @@ struct Sent {
     state: String,
 }
 
+/// A Whisper transcription service for a second opinion on relayed calls.
+#[derive(Clone, Debug)]
+pub struct Whisper {
+    pub url: String,
+    pub model: String,
+}
+
+impl Whisper {
+    /// `[transcription] whisper_url`, else the older `[relay] verify_url`; None
+    /// (on-device only) when neither is set.
+    pub fn from_config(
+        t: Option<&hertz_types::TranscriptionConfig>,
+        r: &RelayConfig,
+    ) -> Option<Self> {
+        let url = t
+            .and_then(|t| t.whisper_url.clone())
+            .filter(|u| !u.trim().is_empty())
+            .or_else(|| Some(r.verify_url.clone()).filter(|u| !u.trim().is_empty()))?;
+        let model = t
+            .and_then(|t| t.whisper_model.clone())
+            .filter(|m| !m.trim().is_empty())
+            .unwrap_or_else(|| r.verify_model.clone());
+        Some(Self {
+            url: url.trim().trim_end_matches('/').to_string(),
+            model,
+        })
+    }
+}
+
 /// Start the relay. Must be called inside the tokio runtime. A missing token file
 /// disables the relay with a warning.
 pub fn spawn(
@@ -152,6 +185,7 @@ pub fn spawn(
     live_keywords: LiveKeywords,
     live_transcripts: LiveTranscripts,
     agent: AgentSlot,
+    whisper: Option<Whisper>,
 ) {
     let token_path = expand_home(&cfg.token_file);
     let token = match std::fs::read_to_string(&token_path) {
@@ -164,9 +198,15 @@ pub fn spawn(
     let relay = Arc::new(Relay {
         hyperia: HyperiaClient::new(cfg.hyperia_url.clone(), Some(token)),
         ollaya: OllayaClient::new(cfg.ollaya_url.clone(), cfg.ollaya_model.clone()),
-        verify: (!cfg.verify_url.is_empty())
-            .then(|| TranscriptionService::new(cfg.verify_url.clone(), cfg.verify_model.clone())),
-        verify_model: cfg.verify_model.clone(),
+        verify: whisper
+            .as_ref()
+            .map(|w| TranscriptionService::new(w.url.clone(), w.model.clone())),
+        verify_model: whisper
+            .as_ref()
+            .map(|w| w.model.clone())
+            .unwrap_or_default(),
+        verify_url: whisper.as_ref().map(|w| w.url.clone()).unwrap_or_default(),
+        whisper_up: Mutex::new(None),
         min_probability: cfg.min_probability,
         bus: bus.clone(),
         own_pane: std::env::var("HYPERIA_PANE").ok().filter(|p| !p.is_empty()),
@@ -175,6 +215,13 @@ pub fn spawn(
         agent,
     });
     info!("relay: routing transcripts to Hyperia panes via ollaya");
+    match &whisper {
+        Some(w) => info!(
+            "relay: second opinion from Whisper ({}) at {}",
+            w.model, w.url
+        ),
+        None => info!("relay: on-device transcription only (no [transcription] whisper_url)"),
+    }
     spawn_pane_name_poller(Arc::clone(&relay), live_keywords);
 
     let mut rx = bus.subscribe_events();
@@ -534,8 +581,23 @@ impl Relay {
         let (Some(service), Some(wav)) = (&self.verify, &call.recording) else {
             return None;
         };
-        if !service.is_up() {
-            debug!("RELAY | Ch {ch} | transcription service down");
+        let up = service.is_up();
+        {
+            let mut last = self.whisper_up.lock().unwrap_or_else(|e| e.into_inner());
+            if *last != Some(up) {
+                if up {
+                    info!("relay: Whisper at {} is answering", self.verify_url);
+                } else {
+                    warn!(
+                        "relay: Whisper at {} isn't answering; on-device transcripts only until it is",
+                        self.verify_url
+                    );
+                }
+                *last = Some(up);
+            }
+        }
+        if !up {
+            debug!("RELAY | Ch {ch} | Whisper down, skipped");
             return None;
         }
         let started = Instant::now();
@@ -710,5 +772,44 @@ mod tests {
         assert!(is_hertz_pane(&pane("x", "hertz"), None), "the console");
         assert!(!is_hertz_pane(&pane("x", "claude"), Some("4dab")));
         assert!(!is_hertz_pane(&pane("x", "hertz-panes"), None));
+    }
+}
+
+#[cfg(test)]
+mod whisper_config_tests {
+    use super::*;
+
+    fn relay(verify_url: &str) -> RelayConfig {
+        serde_json::from_value(serde_json::json!({ "verify_url": verify_url })).unwrap()
+    }
+
+    fn transcription(url: Option<&str>) -> hertz_types::TranscriptionConfig {
+        serde_json::from_value(serde_json::json!({ "whisper_url": url })).unwrap()
+    }
+
+    #[test]
+    fn on_device_only_unless_an_endpoint_is_set() {
+        let none: RelayConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(
+            Whisper::from_config(None, &none).is_none(),
+            "off by default"
+        );
+        let t = transcription(Some("http://wx-box:8765/"));
+        let w = Whisper::from_config(Some(&t), &none).unwrap();
+        assert_eq!(
+            (w.url.as_str(), w.model.as_str()),
+            ("http://wx-box:8765", "medium")
+        );
+        // The older [relay] verify_url still works; whisper_url wins.
+        let old = relay("http://old:8765");
+        assert_eq!(
+            Whisper::from_config(None, &old).unwrap().url,
+            "http://old:8765"
+        );
+        assert_eq!(
+            Whisper::from_config(Some(&t), &old).unwrap().url,
+            "http://wx-box:8765"
+        );
+        assert!(Whisper::from_config(Some(&transcription(Some(" "))), &none).is_none());
     }
 }

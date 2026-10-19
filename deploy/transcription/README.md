@@ -6,7 +6,7 @@ gets back Whisper's version, which is slower and better on names:
 - if that version differs, a follow-up goes to the same pane;
 - if the on-device transcript named no one, routing is tried again on this one.
 
-Without the service, hertz logs `transcription service down` and skips both.
+Without `whisper_url` in the config, hertz skips both and never contacts Whisper.
 
 This is a copy of `nemesis8/services/transcription`, kept here so hertz can
 deploy its own. It's changed to hertz's port 8765 and published on loopback only.
@@ -34,8 +34,13 @@ The first GPU build downloads CUDA PyTorch, several GB.
 
 ## How hertz finds it
 
-`[relay] verify_url` (default `http://localhost:8765`) and `verify_model`
-(default `medium`). Set `verify_url = ""` to turn the double-check off.
+Only when it's configured. hertz is on-device only unless the config has:
+
+```toml
+[transcription]
+whisper_url = "http://127.0.0.1:8765"   # or another machine running this
+whisper_model = "medium"
+```
 
 ## API
 

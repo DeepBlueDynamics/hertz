@@ -30,6 +30,10 @@ language = "en"
 keywords = ["Alpha India", "Alpha Tango", "Top Rabbit", "come in", "over", "channel sixteen"]
 # Log words live while a squelch is open (display only; routing uses the full recording).
 live = true
+# A Whisper service for a second opinion on each relayed call (deploy/transcription,
+# here or on another machine). Left out: on-device transcription only.
+# whisper_url = "http://127.0.0.1:8765"
+# whisper_model = "medium"
 
 # Route each transcript to the Hyperia pane it names ("Top Rabbit, come in, over").
 # ollaya picks from the live pane list; unmatched calls are only logged here.
@@ -40,7 +44,3 @@ token_file = "~/.hertz/hyperia-token"
 # ollaya_url = "http://127.0.0.1:11435"
 # ollaya_model = "laya:en"
 # min_probability = 0.5
-# After sending, double-check on the transcription service (skipped when it is down;
-# "" disables) and send a follow-up if it heard more.
-# verify_url = "http://localhost:8765"
-# verify_model = "medium"

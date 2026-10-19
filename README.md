@@ -193,9 +193,17 @@ recording.
 
 ## Transcription service (Whisper)
 
-The relay also uses a second, slower transcriber: a Whisper HTTP service. It
-isn't needed to receive or record calls; without it hertz logs
-`transcription service down` and skips two things:
+By default hertz transcribes on the device only (Whistle) and never contacts
+Whisper. Give it a Whisper HTTP service, on this machine or another, and the
+relay uses it as a second, slower transcriber:
+
+```toml
+[transcription]
+whisper_url = "http://127.0.0.1:8765"   # or http://<other host>:8765
+whisper_model = "medium"                # for the log
+```
+
+With it, the relay does two more things:
 - **Double-check:** after a call is delivered, its recording is re-transcribed,
   and if Whisper's version differs, a follow-up goes to the same pane.
 - **Retry on a miss:** when the on-device transcript names no one, routing is
@@ -228,9 +236,11 @@ docker compose logs -f      # watch jobs
 ```
 
 **hertzd** doesn't need restarting when the service comes or goes; it checks
-`/health` on each call. It finds the service through `[relay] verify_url`
-(default `http://localhost:8765`) and `verify_model` (default `medium`).
-`verify_url = ""` turns it off.
+`/health` on each call. At start it logs which mode it's in
+(`second opinion from Whisper (medium) at …` or `on-device transcription
+only`). If a configured service stops answering, it says so once and again
+once when it's back. The older `[relay] verify_url` setting still works;
+`whisper_url` wins.
 
 The service has no auth, so the compose files publish it on 127.0.0.1 only.
 
