@@ -178,7 +178,13 @@ pub fn pick_name(
     // or the call-up sounds like it.
     let said = |n: &str| says(transcript, n) || hinted.as_deref() == Some(n);
     let picked = answer.choice != NO_PANE && said(&answer.choice);
-    if picked && probability >= min_probability {
+    // The transcript says exactly one name word for word and ollaya ranks it first:
+    // that's the call, whatever the probability. With Hyperia's call signs in the
+    // list too, "Zippy Lungfish, this is Base Case, come in over." scored 0.44 and
+    // the yes/no second chance 0.48, so a clear call went nowhere.
+    let outright: Vec<&String> = names.iter().filter(|n| says(transcript, n)).collect();
+    let only_one_said = outright.len() == 1 && *outright[0] == answer.choice;
+    if picked && (probability >= min_probability || only_one_said) {
         return Ok(Pick {
             name: Some(answer.choice.clone()),
             best: answer.choice,

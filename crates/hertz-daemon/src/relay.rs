@@ -265,10 +265,19 @@ impl Relay {
                     probability: pick.probability,
                 },
             },
-            None => Dest::NoMatch {
-                best: pick.best,
-                probability: pick.probability,
-            },
+            None => {
+                if pick.confirm.is_some() {
+                    info!(
+                        "RELAY | second chance for {:?} fell short ({})",
+                        spoken_name(&pick.best),
+                        how
+                    );
+                }
+                Dest::NoMatch {
+                    best: pick.best,
+                    probability: pick.probability,
+                }
+            }
         })
     }
 
