@@ -105,6 +105,34 @@ pub trait SdrDevice: Send {
     fn read_sync(&mut self, buf: &mut [u8]) -> Result<usize>;
 }
 
+/// The RTL2832U bulk endpoint's packet size.
+const USB_PACKET: usize = 512;
+
+/// Stands in for a device that was closed (so the USB interface is released
+/// before it is opened again).
+struct ClosedDevice;
+
+impl SdrDevice for ClosedDevice {
+    fn set_sample_rate(&mut self, _: u32) -> Result<()> {
+        Err(SdrError::Other("closed".into()))
+    }
+    fn set_center_freq(&mut self, _: u32) -> Result<()> {
+        Err(SdrError::Other("closed".into()))
+    }
+    fn set_gain(&mut self, _: Gain) -> Result<()> {
+        Err(SdrError::Other("closed".into()))
+    }
+    fn set_bandwidth(&mut self, _: u32) -> Result<()> {
+        Err(SdrError::Other("closed".into()))
+    }
+    fn reset_buffer(&mut self) -> Result<()> {
+        Err(SdrError::Other("closed".into()))
+    }
+    fn read_sync(&mut self, _: &mut [u8]) -> Result<usize> {
+        Err(SdrError::Other("closed".into()))
+    }
+}
+
 pub struct RealSdrDevice {
     device: rtl_sdr_rs::RtlSdr,
 }
@@ -137,7 +165,14 @@ impl SdrDevice for RealSdrDevice {
     }
 
     fn read_sync(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.device.read_sync(buf).map_err(SdrError::from)
+        // libusb on Linux fails a bulk read whose length isn't a whole number of
+        // 512-byte packets (LIBUSB_ERROR_OVERFLOW); WinUSB doesn't mind. Read the
+        // largest whole-packet prefix; the caller just gets a little less per read.
+        let n = match buf.len() - buf.len() % USB_PACKET {
+            0 => buf.len(),
+            n => n,
+        };
+        self.device.read_sync(&mut buf[..n]).map_err(SdrError::from)
     }
 }
 
@@ -479,11 +514,19 @@ impl SdrWorker {
                                 .fetch_add(dropped, Ordering::Relaxed);
                         }
                     }
-                    Err(_e) => {
+                    Err(e) => {
                         stats_clone.read_errors.fetch_add(1, Ordering::Relaxed);
                         consecutive_errors += 1;
+                        log::warn!(
+                            "sdr {serial}: read failed ({consecutive_errors} in a row): {e}"
+                        );
 
                         if consecutive_errors >= 3 {
+                            // Release the USB interface first: opening the same
+                            // dongle while this handle still claims it fails on
+                            // Linux, so the reconnect never succeeded there.
+                            device = Box::new(ClosedDevice);
+                            let mut attempts = 0u32;
                             let _ = event_tx.send(WorkerEvent::DeviceLost);
                             stats_clone.epoch.fetch_add(1, Ordering::Relaxed);
 
@@ -515,8 +558,14 @@ impl SdrWorker {
                                         let _ = event_tx.send(WorkerEvent::DeviceReconnected);
                                         break;
                                     }
-                                    Err(_) => {
-                                        // Keep retrying
+                                    Err(e) => {
+                                        // Keep retrying; say why now and then.
+                                        attempts += 1;
+                                        if attempts == 1 || attempts % 120 == 0 {
+                                            log::warn!(
+                                                "sdr {serial}: reopen failed: {e}; retrying"
+                                            );
+                                        }
                                     }
                                 }
                             }
