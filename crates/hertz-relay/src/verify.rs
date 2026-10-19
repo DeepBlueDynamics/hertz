@@ -10,7 +10,9 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::ollaya::OllayaClient;
 
-pub const DEFAULT_URL: &str = "http://localhost:8765";
+// 127.0.0.1, not localhost: on Windows localhost resolves to ::1 first, and
+// deploy/transcription publishes on 127.0.0.1 only.
+pub const DEFAULT_URL: &str = "http://127.0.0.1:8765";
 pub const DEFAULT_MODEL: &str = "medium";
 
 /// How long to wait for the service to finish one recording.

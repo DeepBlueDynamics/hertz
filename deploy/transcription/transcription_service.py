@@ -405,7 +405,8 @@ def main():
     print(f"  Storage: {STORAGE_DIR}", file=sys.stderr, flush=True)
     print("=" * 60, file=sys.stderr, flush=True)
 
-    app = web.Application()
+    # aiohttp caps a request at 1 MB by default; a 14 s call at 48 kHz is 1.3 MB.
+    app = web.Application(client_max_size=64 * 1024 * 1024)
     app.router.add_post("/transcribe", handle_transcribe)
     app.router.add_post("/classify", handle_classify)
     app.router.add_get("/status/{job_id}", handle_status)
