@@ -23,12 +23,24 @@ const NAMES: &[&str] = &[
 
 /// (expected name, or "" for no route; transcript)
 const CALLS: &[(&str, &str)] = &[
-    ("Zippy Lungfish 🦦 ", "Zippy Lungfish, this is Base Case, come in over."),
-    ("Zippy Lungfish 🦦 ", "Zippy Lungfish, this is Base, come in over."),
-    ("Stable Xerinae 👽", "Stables arena, Stables arena, this is base, come in."),
+    (
+        "Zippy Lungfish 🦦 ",
+        "Zippy Lungfish, this is Base Case, come in over.",
+    ),
+    (
+        "Zippy Lungfish 🦦 ",
+        "Zippy Lungfish, this is Base, come in over.",
+    ),
+    (
+        "Stable Xerinae 👽",
+        "Stables arena, Stables arena, this is base, come in.",
+    ),
     ("Fond Egret 🦞", "Fund egret, fund egret, come in."),
     ("Annual Echidna 🧇", "Kidna, Annual Echidna, come back."),
-    ("Magnificent Vole 🦩", "Magnificent vole. Magnificent vole. This is Base Base."),
+    (
+        "Magnificent Vole 🦩",
+        "Magnificent vole. Magnificent vole. This is Base Base.",
+    ),
     ("Top Rabbit 🧟", "Top rabbit over"),
     ("Oscar Sierra", "Oscar Sierra, this is base, how copy?"),
     ("", "Thank you, have a stable day."),
@@ -54,7 +66,11 @@ fn live_routing() {
         println!(
             "{} {:<22} best {:<22} {:<22} | {text}",
             if ok { "OK" } else { "XX" },
-            if got.is_empty() { "(no route)" } else { got.as_str() },
+            if got.is_empty() {
+                "(no route)"
+            } else {
+                got.as_str()
+            },
             pick.best,
             pick.how()
         );
