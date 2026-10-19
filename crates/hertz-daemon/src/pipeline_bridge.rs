@@ -769,6 +769,73 @@ const NUISANCE_LONG: Duration = Duration::from_secs(8);
 /// How long a nuisance channel (carrier or static, no voice) is skipped.
 const SCAN_LOCKOUT: Duration = Duration::from_secs(300);
 
+/// A channel's squelch raised over static or a carrier, instead of a lockout
+/// (Kord, 2026-10-19: "why can't we just twiddle the squelch instead of locking
+/// it out?"). Ch 71 opened at about -15 dB on noise after every strong call on 72,
+/// and a lockout made it deaf for five minutes each time.
+#[derive(Clone, Copy, Debug)]
+struct Raised {
+    /// The channel's squelch opens only above this (dB).
+    open_db: f32,
+    /// When it was last raised or lowered.
+    at: Instant,
+}
+
+/// The raised squelch sits this far over the strongest nuisance signal.
+const RAISE_MARGIN_DB: f32 = 3.0;
+/// Never raised past this; a nuisance this strong is locked out as before, since a
+/// squelch above it would miss calls anyway.
+const RAISE_MAX_DB: f32 = -3.0;
+/// After this long with no nuisance, the squelch comes down a step.
+const RAISE_HOLD: Duration = Duration::from_secs(300);
+const LOWER_STEP_DB: f32 = 3.0;
+
+/// Raise channel `name`'s squelch over a nuisance whose strongest frame was `peak`.
+/// False when that would need more than [`RAISE_MAX_DB`]: lock it out instead.
+fn raise_squelch(
+    pipeline: &mut Pipeline,
+    raised: &mut Option<Raised>,
+    name: &str,
+    peak: f32,
+    why: &str,
+    now: Instant,
+) -> bool {
+    if peak == f32::MIN {
+        return false;
+    }
+    let open_db = (peak + RAISE_MARGIN_DB).max(raised.map_or(f32::MIN, |r| r.open_db));
+    if open_db > RAISE_MAX_DB {
+        return false;
+    }
+    pipeline.set_open_floor(Some(open_db));
+    *raised = Some(Raised { open_db, at: now });
+    warn!(
+        "scan: Ch {name} squelch raised to {open_db:.1} dB ({why} up to {peak:.1} dB, no voice); \
+         it steps down after {} min quiet",
+        RAISE_HOLD.as_secs() / 60
+    );
+    true
+}
+
+/// Step a raised squelch back down once the channel has been quiet a while.
+fn lower_raised(pipeline: &mut Pipeline, raised: &mut Option<Raised>, name: &str, now: Instant) {
+    let Some(r) = *raised else { return };
+    if now.duration_since(r.at) < RAISE_HOLD {
+        return;
+    }
+    let normal = pipeline.noise_floor_db() + pipeline.squelch_margin_db();
+    let open_db = r.open_db - LOWER_STEP_DB;
+    if open_db <= normal {
+        pipeline.set_open_floor(None);
+        *raised = None;
+        info!("scan: Ch {name} squelch back to normal ({normal:.1} dB)");
+    } else {
+        pipeline.set_open_floor(Some(open_db));
+        *raised = Some(Raised { open_db, at: now });
+        info!("scan: Ch {name} squelch lowered to {open_db:.1} dB");
+    }
+}
+
 fn lock_out(locked_until: &mut [Option<Instant>], idx: usize, chans: &[(String, u32)], why: &str) {
     if locked_until[idx].is_some_and(|t| Instant::now() < t) {
         return;
@@ -938,6 +1005,10 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
             let mut mixers: Vec<Mixer> = chans.iter().map(|_| Mixer::default()).collect();
             let mut locked_until: Vec<Option<Instant>> = vec![None; chans.len()];
             let mut open_since: Vec<Option<Instant>> = vec![None; chans.len()];
+            // The strongest signal of each channel's current open, and each channel's
+            // raised squelch (Kord: raise the squelch over static, don't lock out).
+            let mut open_peak: Vec<f32> = vec![f32::MIN; chans.len()];
+            let mut raised: Vec<Option<Raised>> = vec![None; chans.len()];
             // When each group last had a call: recently busy groups are checked
             // every other hop.
             let mut active_at: Vec<Option<Instant>> = vec![None; groups.len()];
@@ -998,6 +1069,9 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                     // 0 Hz and run its own squelch, demod and recorder.
                     for &m in &groups[g].members {
                         let pipeline = &mut pipelines[m];
+                        if !pipeline.is_squelch_open() {
+                            lower_raised(pipeline, &mut raised[m], &chans[m].0, now);
+                        }
                         let locked = locked_until[m].is_some_and(|t| now < t);
                         if locked && !pipeline.is_squelch_open() {
                             continue;
@@ -1034,12 +1108,22 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                     // Short bursts (a key-up) are activity, not a nuisance: the
                                     // group is now busy and gets checked every other hop.
                                     if !priority.contains(&m) && lasted >= NUISANCE_LONG {
-                                        lock_out(
-                                            &mut locked_until,
-                                            m,
-                                            &chans,
+                                        let peak = open_peak[m];
+                                        if !raise_squelch(
+                                            pipeline,
+                                            &mut raised[m],
+                                            &chans[m].0,
+                                            peak,
                                             classification.label(),
-                                        );
+                                            now,
+                                        ) {
+                                            lock_out(
+                                                &mut locked_until,
+                                                m,
+                                                &chans,
+                                                classification.label(),
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1047,9 +1131,11 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                         // A squelch open longer than any call is a stuck carrier:
                         // close it and lock the channel out.
                         if pipeline.is_squelch_open() {
+                            open_peak[m] = open_peak[m].max(pipeline.last_frame().signal_db);
                             let since = *open_since[m].get_or_insert(now);
                             if since.elapsed() >= SCAN_MAX_OPEN {
                                 let noise_floor = pipeline.noise_floor_db();
+                                let peak = open_peak[m];
                                 pipeline.reset();
                                 dispatch_monitor_event(
                                     &dsp,
@@ -1061,16 +1147,28 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                                         classification: SignalClassification::Carrier,
                                     },
                                 );
-                                if !priority.contains(&m) {
+                                // A stuck priority channel gets its squelch raised too:
+                                // that still hears a real call, which a lockout wouldn't.
+                                if !raise_squelch(
+                                    pipeline,
+                                    &mut raised[m],
+                                    &chans[m].0,
+                                    peak,
+                                    "stuck open",
+                                    now,
+                                ) && !priority.contains(&m)
+                                {
                                     lock_out(&mut locked_until, m, &chans, "stuck open");
                                 }
                                 open_since[m] = None;
+                                open_peak[m] = f32::MIN;
                             } else if locked_until[m].is_none_or(|t| now >= t) {
                                 any_open = true;
                                 group_call[g] = Some((m, now));
                             }
                         } else {
                             open_since[m] = None;
+                            open_peak[m] = f32::MIN;
                         }
                     }
                     if let Some(bins) = spectrum.maybe_emit(&iq) {
@@ -1607,6 +1705,59 @@ mod live_squelch_tests {
         assert_eq!(p.squelch_threshold_db(), floor + 10.0);
         p.set_open_floor(Some(-10.0));
         assert_eq!(p.squelch_threshold_db(), (floor + 10.0).max(-10.0));
+    }
+
+    #[test]
+    fn static_raises_the_squelch_and_quiet_lowers_it() {
+        let mut p = Pipeline::new(PipelineConfig {
+            squelch_margin_db: 10.0,
+            ..PipelineConfig::default()
+        });
+        p.set_noise_floor(-40.0);
+        let mut raised = None;
+        let t0 = Instant::now();
+        // Static up to -15 dB: the squelch goes to -12 dB, not a lockout.
+        assert!(raise_squelch(
+            &mut p,
+            &mut raised,
+            "71",
+            -15.0,
+            "STATIC",
+            t0
+        ));
+        assert_eq!(p.squelch_threshold_db(), -12.0);
+        // A second, weaker burst never lowers it.
+        assert!(raise_squelch(
+            &mut p,
+            &mut raised,
+            "71",
+            -20.0,
+            "STATIC",
+            t0
+        ));
+        assert_eq!(p.squelch_threshold_db(), -12.0);
+        // A carrier near full scale can't be squelched without missing calls.
+        assert!(!raise_squelch(
+            &mut p,
+            &mut raised,
+            "71",
+            -1.0,
+            "CARRIER",
+            t0
+        ));
+        // Quiet: one step down per RAISE_HOLD, then back to floor + margin.
+        lower_raised(&mut p, &mut raised, "71", t0 + RAISE_HOLD / 2);
+        assert_eq!(p.squelch_threshold_db(), -12.0);
+        let mut t = t0;
+        for want in [-15.0, -18.0, -21.0, -24.0, -27.0] {
+            t += RAISE_HOLD;
+            lower_raised(&mut p, &mut raised, "71", t);
+            assert_eq!(p.squelch_threshold_db(), want);
+        }
+        t += RAISE_HOLD;
+        lower_raised(&mut p, &mut raised, "71", t);
+        assert!(raised.is_none());
+        assert_eq!(p.squelch_threshold_db(), -30.0);
     }
 }
 
