@@ -1,0 +1,21 @@
+# The same service on CPU (no GPU), with the smaller "base" model:
+#   docker compose -f docker-compose.cpu.yml up -d --build
+services:
+  transcription:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        WHISPER_MODEL: ${WHISPER_MODEL:-base}
+    container_name: hertz-transcription
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - transcription-data:/data
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_PORT=8765
+    restart: unless-stopped
+
+volumes:
+  transcription-data:

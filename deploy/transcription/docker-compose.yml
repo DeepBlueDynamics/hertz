@@ -1,0 +1,35 @@
+# Whisper transcription service for hertz (NVIDIA GPU, model "medium").
+# hertzd's relay re-transcribes each routed call here (verify_url, default
+# http://localhost:8765) and retries routing on its version when the on-device
+# transcript names no one.
+#
+#   docker compose up -d --build        # from deploy/transcription
+#   curl http://127.0.0.1:8765/health
+#
+# Published on 127.0.0.1 only: the service has no auth.
+services:
+  transcription:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+      args:
+        WHISPER_MODEL: ${WHISPER_MODEL:-medium}
+    container_name: hertz-transcription
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - transcription-data:/data
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - WHISPER_PORT=8765
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  transcription-data:
