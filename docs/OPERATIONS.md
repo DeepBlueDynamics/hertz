@@ -145,7 +145,9 @@ adds real information (a call sign, name, place, number or instruction) or only
 differs trivially. If it adds something, a follow-up goes to the same pane with
 subject `Re: [radio] Ch 72 156.625 MHz`, the server transcript and the original.
 The check never delays the first message, is skipped while the service is down,
-and is turned off with `verify_url = ""`.
+and is turned off with `verify_url = ""`. To run the service:
+`cd deploy/transcription && docker compose up -d --build` (see
+[deploy/transcription](../deploy/transcription/README.md)).
 
 **Pane names as keywords.** With the relay on, hertzd re-reads the pane list every
 5 s and adds the current names (emoji removed) to Whistle's keyword list, so the

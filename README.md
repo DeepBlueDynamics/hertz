@@ -191,6 +191,49 @@ call signs and vessel names. `live = true` also prints words in the console as y
 talk, using Whistle's streaming mode (engine 3.3.1); routing still uses the full
 recording.
 
+## Transcription service (Whisper)
+
+The relay also uses a second, slower transcriber: a Whisper HTTP service. It
+isn't needed to receive or record calls; without it hertz logs
+`transcription service down` and skips two things:
+- **Double-check:** after a call is delivered, its recording is re-transcribed,
+  and if Whisper's version differs, a follow-up goes to the same pane.
+- **Retry on a miss:** when the on-device transcript names no one, routing is
+  tried again on Whisper's version, which is better on names.
+
+hertz keeps its own copy of the service in
+[`deploy/transcription`](deploy/transcription/README.md).
+
+**First time**, or after the image is gone. On an NVIDIA GPU this builds the
+image (model `medium`) and starts it; the first build downloads CUDA PyTorch,
+several GB:
+
+```sh
+cd deploy/transcription
+docker compose up -d --build
+curl http://127.0.0.1:8765/health      # "model_loaded": true when it's ready
+```
+
+On CPU only: `docker compose -f docker-compose.cpu.yml up -d --build` (model
+`base`).
+
+**Once the image is built,** the container restarts with Docker
+(`restart: unless-stopped`):
+
+```sh
+cd deploy/transcription
+docker compose up -d        # start
+docker compose down         # stop
+docker compose logs -f      # watch jobs
+```
+
+**hertzd** doesn't need restarting when the service comes or goes; it checks
+`/health` on each call. It finds the service through `[relay] verify_url`
+(default `http://localhost:8765`) and `verify_model` (default `medium`).
+`verify_url = ""` turns it off.
+
+The service has no auth, so the compose files publish it on 127.0.0.1 only.
+
 ## Hyperia and ollaya (`hertz-relay`)
 
 `hertz-relay` connects hertz to the Hyperia terminal and the ollaya decision
