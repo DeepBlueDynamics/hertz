@@ -176,10 +176,26 @@ pub fn pick_name(
         ));
     }
     let state = serde_json::Value::String(state);
-    let mut answer = ollaya
-        .choose(&state, &questions)?
-        .remove("pane")
-        .expect("choose returns every asked question");
+    let mut answer = match ollaya.choose(&state, &questions) {
+        Ok(mut answers) => answers
+            .remove("pane")
+            .expect("choose returns every asked question"),
+        // ollaya down: a transcript that says exactly one name word for word still
+        // goes to it ("Existing Goldfish, come in, over" was dropped with no ollaya
+        // running). Anything less certain waits for ollaya.
+        Err(e) => {
+            let outright: Vec<&String> = names.iter().filter(|n| says(transcript, n)).collect();
+            if let [only] = outright.as_slice() {
+                return Ok(Pick {
+                    name: Some((*only).clone()),
+                    best: (*only).clone(),
+                    probability: 1.0,
+                    confirm: None,
+                });
+            }
+            return Err(e);
+        }
+    };
     let probability = answer
         .probabilities
         .get(&answer.choice)
@@ -309,5 +325,25 @@ mod tests {
         assert!(says("Top rabbit over", "Top Rabbit 🧟 (a29df980)"));
         assert!(!says("If scent roll, magnifice and ball", "Echo X-ray"));
         assert!(!says("Echo, come in", "Echo X-ray"));
+    }
+
+    #[test]
+    fn ollaya_down_routes_only_a_name_said_outright() {
+        // Nothing listens on port 1, so every ollaya call fails.
+        let down = OllayaClient::new("http://127.0.0.1:1", "laya:en");
+        let names = vec![
+            "Existing Goldfish 🥓".to_string(),
+            "Poised Cattle 🐼".to_string(),
+        ];
+        let pick = pick_name(&names, &down, "Existing goldfish, come in, over.", 0.5).unwrap();
+        assert_eq!(pick.name.as_deref(), Some("Existing Goldfish 🥓"));
+        assert!(pick_name(&names, &down, "Ingold fish, come in.", 0.5).is_err());
+        assert!(pick_name(
+            &names,
+            &down,
+            "Existing Goldfish, Poised Cattle, over.",
+            0.5
+        )
+        .is_err());
     }
 }
