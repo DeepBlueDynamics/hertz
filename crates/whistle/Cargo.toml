@@ -11,7 +11,7 @@ default = ["wav", "fetch"]
 # Read 16-bit / float WAV files into 16 kHz mono f32.
 wav = ["dep:hound"]
 # Download the engine library and whistle.cact from Hugging Face into a local cache.
-fetch = ["dep:ureq", "dep:zip"]
+fetch = ["dep:ureq", "dep:zip", "dep:sha2"]
 
 [dependencies]
 libloading = "0.8"
@@ -20,5 +20,6 @@ serde_json = "1"
 thiserror = "2"
 hound = { version = "3.5", optional = true }
 ureq = { version = "2", optional = true }
+sha2 = { version = "0.10", optional = true }
 zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
 
