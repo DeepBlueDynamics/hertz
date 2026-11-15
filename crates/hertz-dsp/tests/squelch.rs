@@ -210,3 +210,36 @@ fn the_frame_where_the_caller_unkeys_is_kept() {
     );
     assert!(recorded.is_some(), "the transmission completed");
 }
+
+#[test]
+fn close_now_keeps_a_call_that_is_still_going() {
+    // A scanner timeout cuts a long call: it's closed as a voice transmission and
+    // its audio handed over for recording, not thrown away.
+    let mut p = Pipeline::new(PipelineConfig {
+        mode: Mode::Nfm,
+        squelch_margin_db: 6.0,
+        ..PipelineConfig::default()
+    });
+    for f in 0..8 {
+        p.process_buffer(&noise_frame(800 + f));
+    }
+    for f in 0..8 {
+        p.process_buffer(&voice_frame(900 + f));
+    }
+    assert!(p.is_squelch_open(), "voice opened the squelch");
+    let events = p.close_now();
+    assert!(!p.is_squelch_open());
+    let voice = hertz_dsp::classify::SignalClassification::Voice;
+    assert!(events.iter().any(|e| matches!(
+        e,
+        PipelineEvent::SquelchClosed { classification, .. } if *classification == voice
+    )));
+    let recorded = events.iter().find_map(|e| match e {
+        PipelineEvent::TransmissionComplete(t) => Some(t),
+        _ => None,
+    });
+    let t = recorded.expect("the call is handed over for recording");
+    assert_eq!(t.classification, voice);
+    assert!(!t.samples.is_empty());
+    assert!(p.close_now().is_empty(), "closing a closed squelch does nothing");
+}

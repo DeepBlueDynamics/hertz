@@ -761,8 +761,12 @@ fn power_at_db(iq: &[Complex32], offset_hz: f32) -> f32 {
     10.0 * (sum / blocks.max(1) as f32 + 1e-12).log10()
 }
 
-/// A squelch open this long is a stuck carrier, not a call.
+/// A squelch open this long with no voice is a stuck carrier, not a call.
 const SCAN_MAX_OPEN: Duration = Duration::from_secs(30);
+/// A voice open is cut (and recorded) only after this long. Calls run past
+/// 30 s: Kord's 2026-11-15 "X-ray Charlie" call was cut at 30 s by the carrier
+/// timeout and thrown away, with no recording, transcript or relay.
+const VOICE_MAX_OPEN: Duration = Duration::from_secs(180);
 /// A carrier/static open at least this long locks a (non-priority) channel out;
 /// shorter bursts, like a key-up, only mark the group busy.
 const NUISANCE_LONG: Duration = Duration::from_secs(8);
@@ -1140,23 +1144,17 @@ fn spawn_scan_loop(dsp: DspThread) -> thread::JoinHandle<()> {
                             if !frame.voice && now.duration_since(since) >= STATIC_AFTER {
                                 stepped[m] |= step_up(pipeline, &mut raised[m], now);
                             }
-                            if since.elapsed() >= SCAN_MAX_OPEN {
-                                let noise_floor = pipeline.noise_floor_db();
+                            let max_open =
+                                if frame.voice { VOICE_MAX_OPEN } else { SCAN_MAX_OPEN };
+                            if since.elapsed() >= max_open {
                                 let peak = open_peak[m];
-                                pipeline.reset();
-                                dispatch_monitor_event(
-                                    &dsp,
-                                    &snap,
-                                    chans[m].1,
-                                    &PipelineEvent::SquelchClosed {
-                                        signal_db: noise_floor,
-                                        noise_floor,
-                                        classification: SignalClassification::Carrier,
-                                    },
-                                );
+                                // Closed the normal way, so a voice call is recorded.
+                                for pe in pipeline.close_now() {
+                                    dispatch_monitor_event(&dsp, &snap, chans[m].1, &pe);
+                                }
                                 // Stepping the squelch closes static well before this;
                                 // what's left is a carrier too strong to sit over.
-                                if peak > RAISE_MAX_DB && !priority.contains(&m) {
+                                if !frame.voice && peak > RAISE_MAX_DB && !priority.contains(&m) {
                                     lock_out(&mut locked_until, m, &chans, "stuck open");
                                 }
                                 report_stepped(&mut stepped[m], &raised[m], &chans[m].0, peak);

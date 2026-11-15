@@ -204,6 +204,35 @@ impl Pipeline {
         self.state.reset();
     }
 
+    /// Close an open squelch now, as if the signal had dropped: emits the
+    /// `SquelchClosed` and `TransmissionComplete` events a normal close would,
+    /// so a call cut off by a scanner timeout is still recorded. Then resets.
+    pub fn close_now(&mut self) -> Vec<PipelineEvent> {
+        let s = &mut self.state;
+        let mut events = Vec::new();
+        if s.squelch_open {
+            let classification = if s.voice_detected_this_transmission {
+                SignalClassification::Voice
+            } else {
+                SignalClassification::Carrier
+            };
+            events.push(PipelineEvent::SquelchClosed {
+                signal_db: s.last_signal_db,
+                noise_floor: s.noise_floor,
+                classification,
+            });
+            if !s.transmission_buffer.is_empty() {
+                events.push(PipelineEvent::TransmissionComplete(TransmissionSummary {
+                    samples: std::mem::take(&mut s.transmission_buffer),
+                    signal_db: s.last_signal_db,
+                    classification,
+                }));
+            }
+        }
+        s.reset();
+        events
+    }
+
     /// Drop buffered pre-trigger audio. A scanner calls this before each dwell so a
     /// squelch open never replays stale audio from an earlier visit.
     pub fn clear_prebuffer(&mut self) {
